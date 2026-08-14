@@ -43,6 +43,7 @@ const WordRow = z.object({
 // The sheet may carry helper columns beside these (SPEC §3.2) — zod strips them from the
 // parsed word, and every judgement about a row looks only at this list.
 const DOCUMENTED_COLUMNS = WordRow.keyof().options;
+const DOCUMENTED_COLUMN_NAMES = new Set<string>(DOCUMENTED_COLUMNS);
 
 const PUBLISH_STEPS = "File → Publish to web → sheet: Words → CSV";
 
@@ -86,15 +87,19 @@ export function parseSheetCsv(
   const words: Word[] = [];
   const rowOfFirstUse = new Map<string, number>();
   const lastRowWithContent = findLastRowWithContent(parsed.data);
+  // Only a sheet that actually has helper columns can blame its tail on them.
+  const hasHelperColumns = (parsed.meta.fields ?? []).some(
+    (field) => !DOCUMENTED_COLUMN_NAMES.has(field),
+  );
 
   parsed.data.forEach((rawRow, dataRowIndex) => {
     const row = dataRowIndex + FIRST_DATA_ROW;
 
     if (isEmptyRow(rawRow)) {
-      // Rows below the last word usually exist only because a helper column's formula
-      // reaches down there and widens the published range. Without that column Google
-      // would not have published them, so they are dropped as if it had not.
-      if (dataRowIndex > lastRowWithContent) {
+      // Rows below the last word exist only because a helper column's formula reaches
+      // down there and widens the published range. Without that column Google would not
+      // have published them, so they are dropped as if it had not.
+      if (hasHelperColumns && dataRowIndex > lastRowWithContent) {
         return;
       }
 
@@ -242,10 +247,12 @@ function sheetRowOfParseError(
 
 function isEmptyRow(rawRow: Record<string, unknown>): boolean {
   // A helper column's content never speaks for a word, so it cannot make a row that says
-  // no word look like it says one.
+  // no word look like it says one. A documented column that is missing outright is a
+  // header problem, not a blank cell — a sheet whose header names none of the documented
+  // columns must read as broken rows, never as a clean empty sheet.
   return DOCUMENTED_COLUMNS.every((column) => {
     const value = rawRow[column];
-    return value === undefined || (typeof value === "string" && value.trim() === "");
+    return typeof value === "string" && value.trim() === "";
   });
 }
 

@@ -330,9 +330,12 @@ describe("syncFromApi", () => {
       new Response(
         JSON.stringify(
           parseSheetCsv(
-            ["id,term,meaning,example,tags,added", "wa3f19c2b81,flimsum,doorway,,,"].join(
-              "\n",
-            ),
+            // Every documented column renamed: the hardest version of the mistake, where
+            // no row has even one recognisable cell to make it look non-empty.
+            [
+              "identifier,word,meaning,sample,labels,created",
+              "wa3f19c2b81,flimsum,doorway,,,",
+            ].join("\n"),
             SYNCED_AT,
           ),
         ),

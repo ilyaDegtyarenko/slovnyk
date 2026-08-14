@@ -265,6 +265,73 @@ describe("parseSheetCsv", () => {
     ]);
   });
 
+  it("reports every row when the header names none of the documented columns", () => {
+    // The wrong tab published, a banner row above the real header, or renamed columns
+    // must read as broken rows the /health page can show — never as a clean empty sheet.
+    const result = parseSheetCsv(
+      [
+        "identifier,word,meaning,sample,labels,created",
+        "wa3f19c2b81,flimsum,doorway,,noun,2026-01-02",
+        "wb7c02d4e19,gorbik,to wander,,verb,2026-01-03",
+      ].join("\n"),
+      SYNCED_AT,
+    );
+
+    expect(result.words).toEqual([]);
+    expect(result.invalid.map((invalidRow) => invalidRow.row)).toEqual([2, 3]);
+    for (const invalidRow of result.invalid) {
+      expect(invalidRow.issues.join(" ")).toContain("id");
+    }
+  });
+
+  it("keeps complaining about blank rows at the bottom of a sheet without helper columns", () => {
+    const result = parseSheetCsv(
+      csv("wa3f19c2b81,flimsum,doorway,,,", ",,,,,", ",,,,,"),
+      SYNCED_AT,
+    );
+
+    expect(result.words.map((word) => word.id)).toEqual(["wa3f19c2b81"]);
+    expect(result.invalid).toEqual([
+      { row: 3, issues: ["Row is empty. Delete it in the sheet or fill it in."] },
+      { row: 4, issues: ["Row is empty. Delete it in the sheet or fill it in."] },
+    ]);
+  });
+
+  it("keeps a quoted helper value with commas out of the word", () => {
+    const result = parseSheetCsv(
+      [
+        "id,term,translation,example,tags,added,status",
+        'wa3f19c2b81,flimsum,doorway,,noun,2026-01-02,"needs review, ask tutor"',
+      ].join("\n"),
+      SYNCED_AT,
+    );
+
+    expect(result.invalid).toEqual([]);
+    expect(result.words).toEqual([
+      {
+        id: "wa3f19c2b81",
+        term: "flimsum",
+        translation: "doorway",
+        example: "",
+        tags: ["noun"],
+        added: "2026-01-02",
+      },
+    ]);
+  });
+
+  it("ignores a helper column whose header cell is blank", () => {
+    const result = parseSheetCsv(
+      [
+        "id,term,translation,example,tags,added,",
+        "wa3f19c2b81,flimsum,doorway,,noun,2026-01-02,note to self",
+      ].join("\n"),
+      SYNCED_AT,
+    );
+
+    expect(result.invalid).toEqual([]);
+    expect(result.words.map((word) => word.term)).toEqual(["flimsum"]);
+  });
+
   it("silently drops the rows a helper formula publishes below the last word", () => {
     const result = parseSheetCsv(
       [
