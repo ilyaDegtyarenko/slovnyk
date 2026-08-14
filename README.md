@@ -32,15 +32,18 @@ npm run dev
 
 ## Environment
 
-| Variable                 | Required | Description                                          |
-| ------------------------ | -------- | ---------------------------------------------------- |
-| `SHEET_ID`               | yes      | Google Sheet ID (from the sheet URL)                 |
-| `SHEET_TAB`              | no       | Worksheet name, defaults to `Words`                  |
-| `NEXT_PUBLIC_NEW_PER_DAY`| no       | New-card intake per day, defaults to `10`            |
+| Variable                  | Required | Description                                                     |
+| ------------------------- | -------- | --------------------------------------------------------------- |
+| `SHEET_CSV_URL`           | yes      | Full published-to-web CSV URL (`/d/e/2PACX-.../pub?...&output=csv`) |
+| `NEXT_PUBLIC_SHEET_EDIT_URL` | no    | Normal sheet URL, used for the "edit in the sheet" link in the UI |
+| `NEXT_PUBLIC_NEW_PER_DAY` | no       | New-card intake per day, defaults to `10`                        |
+
+`SHEET_CSV_URL` is taken verbatim from `File → Publish to web → sheet: Words → CSV`.
+It is not derivable from the spreadsheet id — see `docs/sheet-setup.md`.
 
 ## Google Sheet contract
 
-The sheet must have a worksheet (default `Words`) with a header row:
+The sheet must have a worksheet named `Words` with a header row:
 
 ```
 id | term | translation | example | tags | added

@@ -25,6 +25,17 @@ system with the contract described below.
 3. Protect `Words!A2:A` — description `IDs — auto-generated`, permissions **only the
    owner**. Collaborators write to `B:E` only.
 4. Publish to the web: `File → Publish to web → sheet: Words → format: CSV → Publish`.
+   Keep **Automatically republish when changes are made** checked, otherwise the tutor's
+   edits never reach the app. Copy the resulting URL verbatim into `SHEET_CSV_URL` —
+   it looks like `https://docs.google.com/spreadsheets/d/e/2PACX-<key>/pub?gid=<gid>&single=true&output=csv`.
+
+   This URL is **not** derivable from the spreadsheet id. The `/d/<id>/gviz/tq` endpoint
+   requires the document to be link-shared, which publishing does not do. Always use the
+   published `/d/e/<key>/pub` URL.
+
+   The URL embeds a `gid`, not a sheet name. Deleting and recreating the `Words` tab
+   changes the gid and invalidates the URL — republish and update the variable if that
+   ever happens.
 5. Share the document with the tutor as **Editor**.
 
 Do **not** use `Convert to table` (Google Tables). It changes the sheet structure and can

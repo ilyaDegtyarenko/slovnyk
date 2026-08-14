@@ -24,15 +24,20 @@ Explicitly out of scope — do not implement, do not scaffold for:
 
 ### 3.1 Fetching
 
-The word list is read from a Google Sheet published to the web, using the gviz CSV
-endpoint:
+The word list is read from a Google Sheet published to the web as CSV. The full
+published URL is supplied via the `SHEET_CSV_URL` environment variable and looks like:
 
 ```
-https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${SHEET_TAB}
+https://docs.google.com/spreadsheets/d/e/2PACX-<key>/pub?gid=<gid>&single=true&output=csv
 ```
+
+Do **not** construct this URL from a spreadsheet id. The `/d/<id>/gviz/tq` endpoint
+requires the document itself to be link-shared; publishing to the web does not grant
+that, so building the URL by hand yields a 404. The published `/d/e/<key>/pub` URL is the
+only endpoint guaranteed to be readable anonymously.
 
 - Fetched through a Next.js route handler at `GET /api/words`, never from the browser
-  directly (keeps `SHEET_ID` out of the client bundle and avoids CORS surprises).
+  directly (keeps the URL out of the client bundle and avoids CORS surprises).
 - Route handler uses `next: { revalidate: 300 }`.
 - A `?fresh=1` query parameter bypasses the cache (`cache: 'no-store'`) and is what the
   manual "Refresh" button in the UI calls.
