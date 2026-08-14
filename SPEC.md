@@ -1,0 +1,186 @@
+# slovnyk — Functional specification
+
+Version 1. Single user (the owner). No authentication, no server-side state.
+
+## 1. Goals
+
+1. Study vocabulary as flashcards with a real spaced-repetition algorithm.
+2. Let a tutor add and correct words without an account, an app, or access to
+   anything the owner owns.
+3. Work offline on a phone, installed to the home screen.
+4. Never lose review history because the source list changed.
+
+## 2. Non-goals for v1
+
+Explicitly out of scope — do not implement, do not scaffold for:
+
+- User accounts, login, multi-user support
+- Server-side database or cross-device sync of progress
+- Text-to-speech, images, diagrams
+- Typing-answer mode, multiple choice, matching games
+- Analytics, telemetry, any third-party tracking
+
+## 3. Data source
+
+### 3.1 Fetching
+
+The word list is read from a Google Sheet published to the web, using the gviz CSV
+endpoint:
+
+```
+https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${SHEET_TAB}
+```
+
+- Fetched through a Next.js route handler at `GET /api/words`, never from the browser
+  directly (keeps `SHEET_ID` out of the client bundle and avoids CORS surprises).
+- Route handler uses `next: { revalidate: 300 }`.
+- A `?fresh=1` query parameter bypasses the cache (`cache: 'no-store'`) and is what the
+  manual "Refresh" button in the UI calls.
+- Google's own publish cache can lag several minutes. This is expected. The UI must show
+  the timestamp of the last successful sync so the user can tell stale from broken.
+
+### 3.2 Parsing and validation
+
+- Parse with `papaparse` (`header: true`, `skipEmptyLines: true`).
+- Validate each row with `zod`:
+
+```ts
+const WordRow = z.object({
+  id: z.string().trim().min(1),
+  term: z.string().trim().min(1),
+  translation: z.string().trim().min(1),
+  example: z.string().trim().optional().default(''),
+  tags: z.string().trim().optional().default(''),
+  added: z.string().trim().optional().default(''),
+})
+```
+
+- Invalid rows are **collected, not thrown**: the response is
+  `{ words: Word[], invalid: { row: number; issues: string[] }[], syncedAt: string }`.
+- Duplicate `id` values: keep the first occurrence, report the rest as invalid.
+- `tags` is split on commas and trimmed into `string[]`.
+
+### 3.3 Caching in the client
+
+- The fetched word list is written to IndexedDB (`words` table) on every successful sync.
+- On startup the app renders from IndexedDB immediately, then revalidates in the
+  background. The app must be fully usable offline.
+
+## 4. Progress model
+
+### 4.1 Storage
+
+Dexie database `slovnyk`, version 1:
+
+```ts
+words:    'id, term, updatedAt'
+progress: 'id, due, state'      // FSRS card state, keyed by word id
+reviews:  '++seq, id, reviewedAt'  // append-only review log
+meta:     'key'                 // syncedAt, settings, schema version
+```
+
+### 4.2 Scheduling
+
+- Use `ts-fsrs` with its default parameters. Do not hand-roll intervals.
+- Four ratings exposed in the UI: **Again / Hard / Good / Easy**.
+- Each answer: load FSRS card state for that `id`, call the scheduler, persist the new
+  state to `progress`, append a row to `reviews`.
+- The `reviews` log is append-only and is what makes progress recoverable and
+  exportable. Never delete from it during normal operation.
+
+### 4.3 Daily queue
+
+Composed in this order:
+
+1. All cards with `due <= now` (learning and review cards), oldest due first.
+2. Up to `NEW_PER_DAY` cards that have no `progress` row, in sheet order.
+
+`NEW_PER_DAY` defaults to 10 and is editable in Settings (persisted in `meta`).
+
+### 4.4 Sheet edits vs progress — the critical rule
+
+- Matching between sheet rows and progress is **by `id` only**. Never by `term`.
+- A word whose `term` or `translation` changed keeps its full scheduling history.
+- A word that disappears from the sheet: keep its `progress` and `reviews` rows, mark it
+  `orphaned`, exclude it from the queue, and show the count in Settings. If it reappears
+  later (tutor undid a deletion), it resumes exactly where it was.
+- Orphaned entries are never auto-deleted in v1.
+
+## 5. Screens
+
+### 5.1 `/` — Study session
+
+- One card at a time. Front: `term`. Tap / Space reveals `translation` and `example`.
+- After reveal: four rating buttons, with keyboard shortcuts `1`–`4`.
+- Header shows remaining counts: due / new.
+- Empty state when the queue is done: what was studied today, when the next card is due,
+  and a button to study ahead.
+
+### 5.2 `/list` — Word list
+
+- All words with search, tag filter, and per-word state (new / learning / review / orphaned,
+  next due date).
+- Read-only. Editing happens in the sheet — link to it from here.
+
+### 5.3 `/stats` — Progress
+
+- Reviews per day for the last 30 days, counts by state, current streak.
+- Keep it to one chart and three numbers. This is not a dashboard.
+
+### 5.4 `/settings`
+
+- New cards per day.
+- Manual "Refresh from sheet" with last-sync timestamp.
+- Export progress as JSON (download), import progress from JSON (merge by `id`,
+  newest `reviewedAt` wins).
+- Orphaned word count.
+
+### 5.5 `/health`
+
+- Invalid sheet rows with row numbers and the reason each failed.
+- Last sync timestamp and last sync error, if any.
+- This page is what the user opens when the tutor breaks the format.
+
+## 6. PWA
+
+- Installable: manifest with name, short name, icons (192/512, maskable), standalone
+  display, theme color.
+- Serwist service worker. App shell and last-synced data available offline.
+- A study session completed offline must persist and must not be lost on reload.
+
+## 7. UX rules
+
+- Dark by default, respects `prefers-color-scheme`.
+- Touch targets at least 44×44 px; rating buttons reachable with one thumb.
+- No layout shift when the answer is revealed — reserve the space.
+- Full keyboard operation on desktop: `Space` reveal, `1`–`4` rate, `U` undo last answer.
+- Undo is limited to the immediately previous answer and rolls back both `progress` and
+  the last `reviews` row.
+
+## 8. Error handling
+
+| Situation                      | Behaviour                                                              |
+| ------------------------------ | ---------------------------------------------------------------------- |
+| Sheet unreachable / offline    | Serve cached words, show a non-blocking "offline, last synced X" banner |
+| Sheet returns HTML (unpublished)| Detect, show actionable error naming the publish step, keep cache      |
+| Some rows invalid              | Study the valid ones, surface the rest on `/health`                     |
+| All rows invalid               | Keep the previous cached list, show a blocking error with a link to `/health` |
+| IndexedDB unavailable          | Show a clear error; do not silently study without saving progress       |
+
+## 9. Testing
+
+Vitest, unit level, on the parts where a bug is silent and expensive:
+
+- `lib/sheet.ts` — parsing, validation, duplicate ids, malformed CSV, HTML response.
+- `lib/srs.ts` — scheduler wrapper: state transitions, due ordering, undo.
+- `lib/queue.ts` — queue composition, `NEW_PER_DAY` cap, orphan exclusion.
+
+UI is not unit-tested in v1. One Playwright smoke test — load, reveal, rate, reload,
+progress survived — is enough.
+
+## 10. Definition of done for v1
+
+- `npm run build` and `npm run test` pass, no TypeScript errors, no `any`.
+- Deployed on Vercel, installable on iOS and Android home screens.
+- Editing a word's text in the sheet does not reset its scheduling.
+- Airplane mode: a full session can be completed and survives a reload.
