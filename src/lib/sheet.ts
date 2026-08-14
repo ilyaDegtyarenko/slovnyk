@@ -40,6 +40,10 @@ const WordRow = z.object({
   added: z.string().trim().optional().default(""),
 });
 
+// The sheet may carry helper columns beside these (SPEC §3.2) — zod strips them from the
+// parsed word, and every judgement about a row looks only at this list.
+const DOCUMENTED_COLUMNS = WordRow.keyof().options;
+
 const PUBLISH_STEPS = "File → Publish to web → sheet: Words → CSV";
 
 const REVALIDATE_SECONDS = 300;
@@ -81,13 +85,21 @@ export function parseSheetCsv(
 
   const words: Word[] = [];
   const rowOfFirstUse = new Map<string, number>();
+  const lastRowWithContent = findLastRowWithContent(parsed.data);
 
   parsed.data.forEach((rawRow, dataRowIndex) => {
     const row = dataRowIndex + FIRST_DATA_ROW;
 
-    // A row that says nothing at all earns one plain sentence rather than a complaint
-    // about every required column being too short.
     if (isEmptyRow(rawRow)) {
+      // Rows below the last word usually exist only because a helper column's formula
+      // reaches down there and widens the published range. Without that column Google
+      // would not have published them, so they are dropped as if it had not.
+      if (dataRowIndex > lastRowWithContent) {
+        return;
+      }
+
+      // A gap between words earns one plain sentence rather than a complaint about every
+      // required column being too short.
       addIssue(row, "Row is empty. Delete it in the sheet or fill it in.");
       return;
     }
@@ -229,9 +241,21 @@ function sheetRowOfParseError(
 }
 
 function isEmptyRow(rawRow: Record<string, unknown>): boolean {
-  return Object.values(rawRow).every(
-    (value) => typeof value === "string" && value.trim() === "",
-  );
+  // A helper column's content never speaks for a word, so it cannot make a row that says
+  // no word look like it says one.
+  return DOCUMENTED_COLUMNS.every((column) => {
+    const value = rawRow[column];
+    return value === undefined || (typeof value === "string" && value.trim() === "");
+  });
+}
+
+function findLastRowWithContent(rows: Record<string, unknown>[]): number {
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    if (!isEmptyRow(rows[index])) {
+      return index;
+    }
+  }
+  return -1;
 }
 
 function syncedAtOf(response: Response): string {

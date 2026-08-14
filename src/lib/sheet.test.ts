@@ -223,6 +223,63 @@ describe("parseSheetCsv", () => {
     ]);
   });
 
+  it("ignores helper columns the sheet keeps beside the documented ones", () => {
+    const result = parseSheetCsv(
+      [
+        "id,term,status,translation,example,tags,added",
+        "wa3f19c2b81,flimsum,still learning,doorway,,noun,2026-01-02",
+      ].join("\n"),
+      SYNCED_AT,
+    );
+
+    expect(result.invalid).toEqual([]);
+    expect(result.words).toEqual([
+      {
+        id: "wa3f19c2b81",
+        term: "flimsum",
+        translation: "doorway",
+        example: "",
+        tags: ["noun"],
+        added: "2026-01-02",
+      },
+    ]);
+  });
+
+  it("treats a row where only a helper column says anything as empty, not as a broken word", () => {
+    const result = parseSheetCsv(
+      [
+        "id,term,translation,example,tags,added,status",
+        "wa3f19c2b81,flimsum,doorway,,noun,2026-01-02,learning",
+        ",,,,,,add a word here",
+        "wc51e8a0f2d,trellup,quiet,,,,",
+      ].join("\n"),
+      SYNCED_AT,
+    );
+
+    expect(result.words.map((word) => word.id)).toEqual([
+      "wa3f19c2b81",
+      "wc51e8a0f2d",
+    ]);
+    expect(result.invalid).toEqual([
+      { row: 3, issues: ["Row is empty. Delete it in the sheet or fill it in."] },
+    ]);
+  });
+
+  it("silently drops the rows a helper formula publishes below the last word", () => {
+    const result = parseSheetCsv(
+      [
+        "id,term,translation,example,tags,added,status",
+        "wa3f19c2b81,flimsum,doorway,,noun,2026-01-02,learning",
+        ",,,,,,add a word here",
+        ",,,,,,",
+      ].join("\n"),
+      SYNCED_AT,
+    );
+
+    expect(result.words.map((word) => word.id)).toEqual(["wa3f19c2b81"]);
+    expect(result.invalid).toEqual([]);
+  });
+
   it("returns nothing but does not throw on an empty body", () => {
     const result = parseSheetCsv("", SYNCED_AT);
 

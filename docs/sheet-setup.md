@@ -16,6 +16,9 @@ system with the contract described below.
 - `added` is `YYYY-MM-DD`, filled automatically.
 - Rows are appended at the bottom. Row order carries no meaning beyond the intake order
   of new cards.
+- Columns beyond the six documented ones are free for helper use — for example a `status`
+  column maintained by a spreadsheet formula. The application reads only the documented
+  columns and ignores everything else, wherever the extra columns sit.
 
 ## Sheet configuration
 
