@@ -12,10 +12,19 @@
 
 # testing
 /coverage
+/test-results/
+/playwright-report/
+/playwright/.cache/
 
 # next.js
 /.next/
 /out/
+
+# serwist — the service worker is built into public/ on every production build
+/public/sw.js
+/public/sw.js.map
+/public/swe-worker-*.js
+/public/swe-worker-*.js.map
 
 # production
 /build
@@ -35,6 +44,10 @@ yarn-error.log*
 
 # vercel
 .vercel
+
+# editor and local-tool artifacts
+.idea/
+.unlighthouse/
 
 # typescript
 *.tsbuildinfo

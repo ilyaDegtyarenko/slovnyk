@@ -7,11 +7,13 @@ wins on process.
 ## Commands
 
 ```bash
-npm run dev        # local dev server
-npm run build      # production build — must pass before every commit
-npm run test       # vitest
-npm run lint       # eslint
-npm run typecheck  # tsc --noEmit
+pnpm dev           # local dev server
+pnpm build         # production build — must pass before every commit
+pnpm test          # vitest
+pnpm e2e           # production build, then the Playwright smoke test
+pnpm exec playwright install chromium  # once per machine, before the first `pnpm e2e`
+pnpm lint          # eslint
+pnpm typecheck     # tsc --noEmit
 ```
 
 ## Non-negotiables
@@ -46,7 +48,7 @@ npm run typecheck  # tsc --noEmit
 
 ## Definition of done for any task
 
-1. `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test` all pass.
+1. `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test` all pass.
 2. The acceptance criteria in `TASKS.md` for that milestone are demonstrably met.
 3. New logic in `src/lib` has tests.
 4. No TODO comments left behind — unfinished work goes in `TASKS.md`, not in the source.

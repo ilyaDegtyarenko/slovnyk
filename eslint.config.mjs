@@ -12,6 +12,14 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Editor and local-tool artifacts, not project code:
+    ".idea/**",
+    ".unlighthouse/**",
+    // Built by Serwist and by Playwright, not written by hand:
+    "public/sw.js",
+    "public/swe-worker-*.js",
+    "playwright-report/**",
+    "test-results/**",
   ]),
 ]);
 

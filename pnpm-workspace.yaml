@@ -1,0 +1,33 @@
+# Not a monorepo — this file is where pnpm 10+ reads project settings from. The empty
+# `packages` list keeps pnpm 9 (which Vercel may still pick for this lockfile version, and
+# which requires the field) from erroring out before it can honor `packageManager`.
+packages: []
+
+# The only dependency that asks to run a postinstall script. Its script is a fallback
+# downloader for the native binding, which pnpm already installs as a platform-specific
+# optional dependency — so the script stays off.
+allowBuilds:
+  unrs-resolver: false
+
+# Supply-chain quarantine: a freshly published version must be at least a day old before
+# pnpm will install it. The Next.js 16.3.1 entries are pinned exceptions for the exact
+# versions this app was built and validated against, which were under a day old when the
+# repo moved to pnpm — future Next releases wait out the day like everything else. The two
+# browserslist data packages stay excluded by name: they publish several times a day by
+# design, so every fresh resolution of them is always "too young".
+minimumReleaseAge: 1440
+minimumReleaseAgeExclude:
+  - next@16.3.1
+  - eslint-config-next@16.3.1
+  - "@next/env@16.3.1"
+  - "@next/eslint-plugin-next@16.3.1"
+  - "@next/swc-darwin-arm64@16.3.1"
+  - "@next/swc-darwin-x64@16.3.1"
+  - "@next/swc-linux-arm64-gnu@16.3.1"
+  - "@next/swc-linux-arm64-musl@16.3.1"
+  - "@next/swc-linux-x64-gnu@16.3.1"
+  - "@next/swc-linux-x64-musl@16.3.1"
+  - "@next/swc-win32-arm64-msvc@16.3.1"
+  - "@next/swc-win32-x64-msvc@16.3.1"
+  - baseline-browser-mapping
+  - electron-to-chromium

@@ -25,10 +25,17 @@ FSRS, and stores all review progress locally in IndexedDB.
 ## Getting started
 
 ```bash
-npm install
-cp .env.example .env.local   # fill in SHEET_ID
-npm run dev
+pnpm install
+pnpm exec playwright install chromium   # once per machine, for `pnpm e2e`
+cp .env.example .env.local              # fill in SHEET_CSV_URL
+pnpm dev
 ```
+
+A production build writes the service worker to `public/sw.js`, and `next dev` then serves
+that file as a static asset — so a browser that has already installed the service worker
+from `pnpm start` on the same port keeps updating from it and can answer with precached
+production HTML instead of the dev server. If a dev page looks stale, unregister the service
+worker in DevTools → Application → Service workers.
 
 ## Environment
 

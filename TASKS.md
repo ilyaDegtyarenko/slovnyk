@@ -9,12 +9,13 @@ previous is merged and its acceptance criteria are met.
 
 - Next.js 16, TypeScript, Tailwind, ESLint, `src/` directory, `@/*` import alias.
 - Vitest configured with a `test` script.
-- `.env.example` with `SHEET_ID=`, `SHEET_TAB=Words`, `NEXT_PUBLIC_NEW_PER_DAY=10`.
+- `.env.example` with `SHEET_CSV_URL=`, `NEXT_PUBLIC_SHEET_EDIT_URL=`,
+  `NEXT_PUBLIC_NEW_PER_DAY=10`.
 - `.gitignore` covers `.env*.local`.
 - Dependencies installed: `ts-fsrs`, `dexie`, `papaparse`, `zod`, `@types/papaparse`.
 
-**Acceptance:** `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test` all
-pass on a clean clone after `npm install`.
+**Acceptance:** `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test` all
+pass on a clean clone after `pnpm install`.
 
 ---
 
@@ -41,8 +42,13 @@ a row in the sheet appears after `?fresh=1`; a deliberately broken row shows up 
 - `src/lib/queue.ts`: due cards first, then up to `NEW_PER_DAY` new ones, orphans excluded.
 - `src/lib/sync.ts`: merge a fetched list into `words`, mark missing ids as orphaned,
   never touch `progress` or `reviews`.
+- Orphan guard: a fetch whose `words` is empty while the cached list is not — an
+  unterminated quote truncating the sheet, for example — must keep the previous list and
+  surface a sync error instead of orphaning everything. Any non-empty fetch is a
+  legitimate edit and orphans normally per `SPEC.md` §4.4.
 - Tests: full state transitions per rating, queue ordering, new-card cap, orphan handling,
-  and — required — a test proving that changing a word's `term` preserves its progress.
+  a test proving that a truncated fetch orphans nothing, and — required — a test proving
+  that changing a word's `term` preserves its progress.
 
 **Acceptance:** the "sheet edit does not reset progress" test passes. No UI yet.
 
@@ -67,7 +73,7 @@ on a phone; a reload mid-session loses nothing; no layout shift on reveal.
 
 - Manifest, icons (192/512 + maskable), theme color, standalone display.
 - Serwist service worker: app shell and last-synced data cached.
-- Vercel deployment with `SHEET_ID` set in project environment variables.
+- Vercel deployment with `SHEET_CSV_URL` set in project environment variables.
 - One Playwright smoke test: load → reveal → rate → reload → progress persisted.
 
 **Acceptance:** installs to the iOS and Android home screen; a session completed in
