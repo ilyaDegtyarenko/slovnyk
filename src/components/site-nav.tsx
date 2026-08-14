@@ -23,13 +23,19 @@ export function SiteNav() {
               <Link
                 href={link.href}
                 aria-current={current ? "page" : undefined}
-                className={`flex h-11 items-center rounded-md px-3 text-sm transition-colors hover:bg-black/[.04] dark:hover:bg-white/[.06] ${
+                className={`relative flex h-12 items-center px-3 text-sm transition-colors ${
                   current
-                    ? "font-semibold"
-                    : "text-zinc-600 dark:text-zinc-400"
+                    ? "font-semibold text-foreground"
+                    : "text-zinc-500 hover:text-foreground dark:text-zinc-400 dark:hover:text-foreground"
                 }`}
               >
                 {link.label}
+                {current ? (
+                  <span
+                    aria-hidden
+                    className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-foreground"
+                  />
+                ) : null}
               </Link>
             </li>
           );

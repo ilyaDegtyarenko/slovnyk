@@ -16,17 +16,27 @@ import {
 import { REVIEW_RATINGS, type ReviewRating } from "@/lib/srs";
 import { syncFromApi, type SyncError } from "@/lib/sync";
 
-const CARD_CLASS_NAME =
-  "flex flex-1 flex-col items-center justify-center gap-6 rounded-2xl border border-black/10 p-6 text-center dark:border-white/15";
+const CARD_FACE_CLASS_NAME =
+  "absolute inset-0 flex flex-col items-center overflow-y-auto rounded-3xl border border-black/10 bg-white px-8 py-10 text-center shadow-[0_1px_2px_rgba(0,0,0,0.04),0_16px_40px_-20px_rgba(0,0,0,0.25)] backface-hidden dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none";
 
-const BUTTON_CLASS_NAME =
-  "flex h-11 items-center gap-2 rounded-lg border border-black/10 px-3 text-sm transition-colors hover:bg-black/[.04] disabled:opacity-40 disabled:hover:bg-transparent dark:border-white/15 dark:hover:bg-white/[.06]";
+// Centered with auto margins rather than `justify-center`: a centered flex container clips
+// overflowing content on both edges with no way to scroll to the start, while auto margins
+// collapse to zero and leave the whole answer reachable.
+const CARD_FACE_CONTENT_CLASS_NAME =
+  "my-auto flex w-full flex-col items-center gap-5";
 
-const borderByRating: Record<ReviewRating, string> = {
-  again: "border-red-500/50 hover:bg-red-500/10",
-  hard: "border-amber-500/50 hover:bg-amber-500/10",
-  good: "border-emerald-500/50 hover:bg-emerald-500/10",
-  easy: "border-sky-500/50 hover:bg-sky-500/10",
+const PILL_BUTTON_CLASS_NAME =
+  "flex h-11 items-center gap-2 rounded-full border border-black/10 px-4 text-sm transition-[background-color,transform] duration-150 hover:bg-black/[.04] active:scale-[0.97] disabled:opacity-40 disabled:hover:bg-transparent disabled:active:scale-100 dark:border-white/15 dark:hover:bg-white/[.06]";
+
+const PRIMARY_BUTTON_CLASS_NAME =
+  "flex h-12 items-center justify-center rounded-full bg-foreground px-6 text-base font-medium text-background transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.97] disabled:opacity-40 disabled:active:scale-100";
+
+const colorByRating: Record<ReviewRating, string> = {
+  again:
+    "border-red-500/40 text-red-600 hover:bg-red-500/10 dark:text-red-400",
+  hard: "border-amber-500/40 text-amber-600 hover:bg-amber-500/10 dark:text-amber-400",
+  good: "border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400",
+  easy: "border-sky-500/40 text-sky-600 hover:bg-sky-500/10 dark:text-sky-400",
 };
 
 const NOTHING_TO_UNDO =
@@ -240,20 +250,35 @@ export default function StudyPage() {
   const renderBody = (): ReactNode => {
     if (session === null) {
       return (
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Loading the cached word list…
-        </p>
+        <div className="flex flex-1 flex-col justify-center gap-4">
+          <div
+            aria-hidden
+            className="h-[clamp(320px,58dvh,520px)] rounded-3xl border border-black/5 bg-black/[0.03] motion-safe:animate-pulse dark:border-white/5 dark:bg-white/[0.03]"
+          />
+          <div className="h-20" />
+          <p className="sr-only">Loading the cached word list…</p>
+        </div>
       );
     }
 
     if (session.wordCount === 0) {
       return (
-        <section className={CARD_CLASS_NAME}>
-          <h2 className="text-xl font-semibold">No words on this device yet</h2>
+        <section className="flex flex-1 flex-col items-center justify-center gap-4 text-center motion-safe:animate-card-in">
+          <h2 className="text-2xl font-semibold tracking-tight">
+            No words on this device yet
+          </h2>
           <p className="max-w-sm text-sm text-zinc-600 dark:text-zinc-400">
             Nothing has been synced from the sheet. Try “Refresh from sheet” in
             Settings, and open Health to see what the sheet is answering.
           </p>
+          <div className="mt-2 flex items-center gap-3">
+            <Link href="/settings" className={PILL_BUTTON_CLASS_NAME}>
+              Open Settings
+            </Link>
+            <Link href="/health" className={PILL_BUTTON_CLASS_NAME}>
+              Open Health
+            </Link>
+          </div>
         </section>
       );
     }
@@ -261,11 +286,27 @@ export default function StudyPage() {
     if (current === undefined) {
       const next = session.upcoming[0];
       return (
-        <section className={CARD_CLASS_NAME}>
-          <h2 className="text-2xl font-semibold tracking-tight">
+        <section className="flex flex-1 flex-col items-center justify-center gap-4 text-center motion-safe:animate-card-in">
+          <span
+            aria-hidden
+            className="flex size-16 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="size-8"
+            >
+              <path d="M4 12.5l5 5L20 6.5" />
+            </svg>
+          </span>
+          <h2 className="text-3xl font-semibold tracking-tight">
             Done for today
           </h2>
-          <p className="text-sm">
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
             {session.answersToday === 1
               ? "1 answer today"
               : `${session.answersToday} answers today`}
@@ -283,7 +324,7 @@ export default function StudyPage() {
             type="button"
             onClick={studyAhead}
             disabled={session.upcoming.length === 0}
-            className="h-14 rounded-xl border border-black/10 px-6 text-base font-medium transition-colors hover:bg-black/[.04] disabled:opacity-40 disabled:hover:bg-transparent dark:border-white/15 dark:hover:bg-white/[.06]"
+            className={`mt-2 ${PRIMARY_BUTTON_CLASS_NAME}`}
           >
             Study ahead ({session.upcoming.length})
           </button>
@@ -291,91 +332,149 @@ export default function StudyPage() {
       );
     }
 
-    // The answer is in the tree whether or not it is showing, so revealing it moves nothing.
-    const cardContent = (
-      <>
-        <span className="block text-3xl font-semibold tracking-tight">
-          {current.word.term}
-        </span>
-        <span className={`flex flex-col gap-3 ${revealed ? "" : "invisible"}`}>
-          <span className="block text-xl">{current.word.translation}</span>
-          <span className="block text-sm italic text-zinc-600 dark:text-zinc-400">
-            {current.word.example}
-          </span>
-        </span>
-      </>
-    );
-
     return (
-      <>
-        {revealed ? (
-          <div className={CARD_CLASS_NAME}>{cardContent}</div>
-        ) : (
+      <div className="flex flex-1 flex-col justify-center gap-4">
+        {/* The key remounts the card face down for every word, which is also what plays
+            the entrance animation between cards. */}
+        <section
+          key={current.word.id}
+          className="flex h-[clamp(320px,58dvh,520px)] flex-col [perspective:1600px] motion-safe:animate-card-in"
+        >
+          {/* The face-down name carries the word itself, so a screen reader hears what it
+              is being asked to recall, not just that an answer exists. */}
           <button
             type="button"
-            onClick={() => setRevealed(true)}
-            className={CARD_CLASS_NAME}
+            aria-label={
+              revealed ? undefined : `${current.word.term} — show answer`
+            }
+            onClick={() => setRevealed((facingUp) => !facingUp)}
+            className={`relative min-h-72 flex-1 cursor-pointer rounded-3xl transform-3d motion-safe:transition-transform motion-safe:duration-500 ${
+              revealed ? "rotate-y-180" : ""
+            }`}
           >
-            {cardContent}
-          </button>
-        )}
-
-        {revealed ? (
-          <div className="grid grid-cols-4 gap-2">
-            {REVIEW_RATINGS.map((rating, index) => (
-              <button
-                key={rating}
-                type="button"
-                onClick={() => void answer(rating)}
-                className={`flex h-14 flex-col items-center justify-center rounded-xl border capitalize transition-colors ${borderByRating[rating]}`}
-              >
-                {rating}
-                <span className="font-mono text-xs opacity-60">
-                  {index + 1}
+            {/* tabIndex -1: Chromium otherwise makes an overflowing face its own tab stop,
+                including the aria-hidden one. */}
+            <span
+              aria-hidden={revealed}
+              tabIndex={-1}
+              className={CARD_FACE_CLASS_NAME}
+            >
+              {current.kind === "new" ? (
+                <span className="absolute top-5 rounded-full border border-sky-500/40 px-2.5 py-0.5 text-xs font-medium text-sky-600 dark:text-sky-400">
+                  New word
                 </span>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setRevealed(true)}
-            className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-foreground text-base font-medium text-background transition-opacity hover:opacity-90"
-          >
-            Show answer
-            <span className="font-mono text-xs opacity-60">Space</span>
+              ) : null}
+              <span className={CARD_FACE_CONTENT_CLASS_NAME}>
+                <span className="block max-w-full break-words text-balance text-4xl font-semibold tracking-tight">
+                  {current.word.term}
+                </span>
+              </span>
+            </span>
+
+            <span
+              aria-hidden={!revealed}
+              tabIndex={-1}
+              className={`${CARD_FACE_CLASS_NAME} rotate-y-180`}
+            >
+              <span className={CARD_FACE_CONTENT_CLASS_NAME}>
+                <span className="block text-sm text-zinc-500 dark:text-zinc-400">
+                  {current.word.term}
+                </span>
+                <span className="block max-w-full break-words text-balance text-3xl font-semibold tracking-tight">
+                  {current.word.translation}
+                </span>
+                {current.word.example === "" ? null : (
+                  <span className="block max-w-[min(28rem,100%)] break-words text-balance text-base italic text-zinc-600 dark:text-zinc-400">
+                    {current.word.example}
+                  </span>
+                )}
+                {current.word.tags.length === 0 ? null : (
+                  <span className="flex flex-wrap justify-center gap-1.5">
+                    {current.word.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full bg-black/[0.05] px-2.5 py-0.5 text-xs text-zinc-600 dark:bg-white/10 dark:text-zinc-300"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </span>
+            </span>
           </button>
-        )}
-      </>
+        </section>
+
+        {/* Fixed height, so trading the hint for the rating buttons moves nothing. */}
+        <div className="h-20">
+          {revealed ? (
+            <div className="grid h-full grid-cols-4 gap-2 motion-safe:animate-rise-in">
+              {REVIEW_RATINGS.map((rating, index) => (
+                <button
+                  key={rating}
+                  type="button"
+                  onClick={() => void answer(rating)}
+                  className={`flex h-full flex-col items-center justify-center gap-0.5 rounded-2xl border text-sm font-medium capitalize transition-[background-color,transform] duration-150 active:scale-[0.97] ${colorByRating[rating]}`}
+                >
+                  {rating}
+                  <span className="font-mono text-[11px] opacity-50 pointer-coarse:hidden">
+                    {index + 1}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="flex h-full items-center justify-center text-sm text-zinc-500 dark:text-zinc-400">
+              {/* The keyboard half disappears on touch screens, so the spaces live in the
+                  text itself — flex gaps between text runs collapse once the span's box
+                  is gone, which once shipped as “Tap the cardto flip it”. */}
+              <span>
+                Tap the card{" "}
+                <span className="hidden pointer-fine:inline">
+                  or press{" "}
+                  <span className="font-mono text-xs opacity-70">Space</span>{" "}
+                </span>
+                to flip it
+              </span>
+            </p>
+          )}
+        </div>
+      </div>
     );
   };
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 px-4 py-4 font-sans">
+    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
       <header className="flex items-center justify-between gap-3">
-        <h1 className="text-sm font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
-          Study
-        </h1>
-        <div className="flex items-center gap-3">
-          {session === null ? null : (
-            <p aria-live="polite" className="font-mono text-sm">
-              {countsLabel(queue)}
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={() => void undo()}
-            disabled={undoable === null}
-            className={BUTTON_CLASS_NAME}
+        <h1 className="sr-only">Study</h1>
+        {session === null ? (
+          <span aria-hidden />
+        ) : (
+          <p
+            aria-live="polite"
+            className="rounded-full border border-black/10 px-3 py-1 text-xs font-medium tabular-nums text-zinc-600 dark:border-white/10 dark:text-zinc-400"
           >
-            Undo
-            <span className="font-mono text-xs opacity-60">U</span>
-          </button>
-        </div>
+            {countsLabel(queue)}
+          </p>
+        )}
+        <button
+          type="button"
+          onClick={() => void undo()}
+          disabled={undoable === null}
+          className={PILL_BUTTON_CLASS_NAME}
+        >
+          Undo
+          <span className="font-mono text-xs opacity-60 pointer-coarse:hidden">
+            U
+          </span>
+        </button>
       </header>
 
       {undoNotice === null ? null : (
-        <p role="status" className="text-sm text-zinc-600 dark:text-zinc-400">
+        <p
+          role="status"
+          className="text-sm text-zinc-600 motion-safe:animate-rise-in dark:text-zinc-400"
+        >
           {undoNotice}
         </p>
       )}
@@ -383,7 +482,7 @@ export default function StudyPage() {
       {notice === null || blocked ? null : (
         <section
           role="status"
-          className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm"
+          className="rounded-2xl border border-amber-500/40 bg-amber-500/5 p-4 text-sm motion-safe:animate-rise-in"
         >
           <p className="font-medium">{notice.title}</p>
           <p className="mt-1 text-zinc-600 dark:text-zinc-400">
@@ -406,7 +505,7 @@ export default function StudyPage() {
       {storageError !== null ? (
         <section
           role="alert"
-          className="rounded-lg border border-red-500/40 bg-red-500/5 p-4"
+          className="rounded-2xl border border-red-500/40 bg-red-500/5 p-5"
         >
           <h2 className="font-medium text-red-700 dark:text-red-300">
             Progress cannot be saved on this device
@@ -421,7 +520,7 @@ export default function StudyPage() {
       ) : blocked && notice !== null ? (
         <section
           role="alert"
-          className="rounded-lg border border-red-500/40 bg-red-500/5 p-4"
+          className="rounded-2xl border border-red-500/40 bg-red-500/5 p-5"
         >
           <h2 className="font-medium text-red-700 dark:text-red-300">
             {notice.title}
@@ -436,14 +535,14 @@ export default function StudyPage() {
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <Link
               href="/health"
-              className={`${BUTTON_CLASS_NAME} font-medium underline underline-offset-4`}
+              className={`${PILL_BUTTON_CLASS_NAME} font-medium underline underline-offset-4`}
             >
               See which rows the sheet rejected
             </Link>
             <button
               type="button"
               onClick={() => setSyncErrorSeen(true)}
-              className={BUTTON_CLASS_NAME}
+              className={PILL_BUTTON_CLASS_NAME}
             >
               Study the cached words
             </button>

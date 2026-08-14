@@ -34,6 +34,8 @@ const WORDS_FIXTURE = {
 };
 
 const FIXTURE_TERMS = /blimflar|quennet|sproom/;
+const FIXTURE_TRANSLATIONS =
+  /to hum while working|a small high window|damp morning air/;
 
 async function serveWordsFixture(page: Page): Promise<void> {
   await page.route("**/api/words*", (route) =>
@@ -102,6 +104,54 @@ test.describe("study session", () => {
     // that counts today's answers is still there.
     await expect(doneHeadingOf(page)).toBeVisible();
     await expect(page.getByText(answersTodayLabel(answers))).toBeVisible();
+  });
+
+  test("the card flips over and back without moving the page", async ({
+    page,
+  }) => {
+    await serveWordsFixture(page);
+    await page.goto("/");
+
+    const faceDownCard = page.getByRole("button", { name: "Show answer" });
+    await expect(faceDownCard).toBeVisible();
+
+    // The keyboard half of the hint is display:none on touch screens; what remains must
+    // still read as a sentence. A missing space here shipped once already.
+    const hint = page.getByText(/Tap the card/);
+    expect(await hint.innerText()).toMatch(
+      /^Tap the card (?:or press Space )?to flip it$/,
+    );
+
+    // SPEC §7 wants every touch target at 44 px or more; Undo is the smallest control on
+    // this screen, so it stands in for all of them.
+    const undoBox = await page
+      .getByRole("button", { name: /^undo/i })
+      .boundingBox();
+    expect(undoBox?.height).toBeGreaterThanOrEqual(44);
+
+    // The entrance animation translates the card; the layout comparison below needs the
+    // resting position.
+    const cardSection = page.locator("main section").first();
+    await cardSection.evaluate(async (section) => {
+      await Promise.all(
+        section
+          .getAnimations({ subtree: true })
+          .map((animation) => animation.finished),
+      );
+    });
+    const restingBox = await cardSection.boundingBox();
+
+    await faceDownCard.click();
+    const good = page.getByRole("button", { name: /^good/i });
+    await expect(good).toBeVisible();
+
+    // SPEC §7: revealing must not move the layout under the user's thumb.
+    expect(await cardSection.boundingBox()).toEqual(restingBox);
+
+    // Tapping the revealed card turns it back face down instead of rating anything.
+    await page.getByRole("button", { name: FIXTURE_TRANSLATIONS }).click();
+    await expect(faceDownCard).toBeVisible();
+    await expect(good).toBeHidden();
   });
 
   test("the blocking sync error keeps the keyboard away from the queue", async ({

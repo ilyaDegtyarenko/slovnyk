@@ -14,7 +14,13 @@ export default defineConfig({
   use: {
     baseURL: BASE_URL,
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    // The app is used as an installed phone PWA first, and coarse-pointer styling has
+    // already hidden a bug from the desktop project (a keyboard hint whose surrounding
+    // spaces vanished with it). Pixel 7 keeps the suite on the installed Chromium.
+    { name: "mobile-chromium", use: { ...devices["Pixel 7"] } },
+  ],
   webServer: {
     // `pnpm exec` resolves `next` strictly from node_modules/.bin — unlike npx, it can
     // never fall back to fetching an unpinned `next` from the registry.
