@@ -128,12 +128,15 @@ Composed in this order:
   offline. The button simply does not render where the API is missing.
 - After reveal: four rating buttons, with keyboard shortcuts `1`–`4`. Each button shows
   the interval that answer would schedule (`10 min`, `3 d`), computed by ts-fsrs, so the
-  four choices explain themselves.
+  four choices explain themselves. The buttons enter as a chain — each a beat after the
+  one before, never all at once.
 - Header says what is left in plain words (`1 to review · 2 new`) and says nothing when
   the queue is empty.
-- A thin progress bar with an `answered/total` label sits in the header block, on its
-  own row under the counts. A card that comes back mid-sitting (rated Again, or newly
+- A thin progress bar shares the header row with the counts, its `answered/total` label
+  sitting right at its end. A card that comes back mid-sitting (rated Again, or newly
   due) grows the total rather than resetting the count; undo takes the tick back.
+- Undo is a quiet borderless button at the bottom of the screen, below the card — not in
+  the header.
 - Empty state when the queue is done: what was studied today, when the next card is due,
   and a button to study ahead.
 

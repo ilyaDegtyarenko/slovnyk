@@ -534,7 +534,7 @@ export default function StudyPage() {
               role="toolbar"
               aria-label="Rate this card"
               {...ratingRovingFocus.groupProps}
-              className="grid h-full grid-cols-4 gap-2 motion-safe:animate-rise-in"
+              className="grid h-full grid-cols-4 gap-2"
             >
               {REVIEW_RATINGS.map((rating, index) => (
                 <button
@@ -542,7 +542,11 @@ export default function StudyPage() {
                   type="button"
                   {...ratingRovingFocus.itemProps(index)}
                   onClick={() => void answer(rating)}
-                  className="flex h-full flex-col items-center justify-center gap-0.5 rounded-2xl border border-black/10 text-sm font-medium capitalize transition-[background-color,transform] duration-150 hover:bg-black/[.04] active:scale-[0.97] dark:border-white/10 dark:hover:bg-white/[.06]"
+                  /* The buttons arrive as a chain, each a beat behind its neighbor;
+                     the keyframe's `both` fill keeps every one invisible until its
+                     turn. Late arrivals are still live — a fast `3` never waits. */
+                  style={{ animationDelay: `${index * 60}ms` }}
+                  className="flex h-full flex-col items-center justify-center gap-0.5 rounded-2xl border border-black/10 text-sm font-medium capitalize transition-[background-color,transform] duration-150 hover:bg-black/[.04] active:scale-[0.97] motion-safe:animate-rise-in dark:border-white/10 dark:hover:bg-white/[.06]"
                 >
                   <span className={colorByRating[rating]}>{rating}</span>
                   {/* `normal-case` shields the interval from the button's capitalize —
@@ -576,38 +580,22 @@ export default function StudyPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
-      <header className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-3">
-          <h1 className="sr-only">Study</h1>
-          {/* Mounted even while it says nothing: a live region announces changes only
-              if it already existed, and a refill mid-sitting is such a change. */}
-          {session === null ? (
-            <span aria-hidden />
-          ) : (
-            <p
-              aria-live="polite"
-              className="text-sm font-medium tabular-nums text-zinc-500 dark:text-zinc-400"
-            >
-              {countsLabel(queue)}
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={() => void undo()}
-            disabled={undoable === null}
-            className={PILL_BUTTON_CLASS_NAME}
+      {/* One quiet line: counts, then the bar running to its own label. Undo moved out
+          to the bottom of the screen — a pill up here kept shouldering the bar aside. */}
+      <header className="flex min-h-5 flex-wrap items-center gap-x-4 gap-y-2">
+        <h1 className="sr-only">Study</h1>
+        {/* Mounted even while it says nothing: a live region announces changes only
+            if it already existed, and a refill mid-sitting is such a change. */}
+        {session === null ? null : (
+          <p
+            aria-live="polite"
+            className="text-sm font-medium tabular-nums text-zinc-500 dark:text-zinc-400"
           >
-            Undo
-            <span className="font-mono text-xs opacity-60 pointer-coarse:hidden">
-              U
-            </span>
-          </button>
-        </div>
-
-        {/* Up here with the header, apart from the card: the bar measures the sitting,
-            not the word on screen. */}
+            {countsLabel(queue)}
+          </p>
+        )}
         {studying ? (
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-48 flex-1 items-center gap-3">
             <div
               role="progressbar"
               aria-label="Session progress"
@@ -710,6 +698,27 @@ export default function StudyPage() {
         </section>
       ) : (
         renderBody()
+      )}
+
+      {/* Undo waits at the bottom, borderless: reached for once in a while, it has no
+          business sitting in the header next to the numbers read on every card. */}
+      {session === null ||
+      session.wordCount === 0 ||
+      storageError !== null ||
+      blocked ? null : (
+        <footer className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => void undo()}
+            disabled={undoable === null}
+            className="flex h-11 items-center gap-2 rounded-full px-5 text-sm text-zinc-500 transition-[background-color,color,transform] duration-150 hover:bg-black/[.04] hover:text-foreground active:scale-[0.97] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-zinc-500 disabled:active:scale-100 dark:text-zinc-400 dark:hover:bg-white/[.06] dark:hover:text-foreground dark:disabled:hover:text-zinc-400"
+          >
+            Undo
+            <span className="font-mono text-xs opacity-60 pointer-coarse:hidden">
+              U
+            </span>
+          </button>
+        </footer>
       )}
     </main>
   );
