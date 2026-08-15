@@ -18,12 +18,6 @@ export default async function GatePage({ searchParams }: PageProps<"/gate">) {
 
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-4 px-4 py-6 font-sans">
-      <h1 className="text-2xl font-semibold tracking-tight">
-        This app needs its key
-      </h1>
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
-        Enter the access key once and this device stays let in.
-      </p>
       <form method="post" action="/api/gate" className="flex flex-col gap-3">
         <input
           type="password"
@@ -32,7 +26,7 @@ export default async function GatePage({ searchParams }: PageProps<"/gate">) {
           aria-label="Access key"
           placeholder="Access key"
           autoComplete="current-password"
-          className="h-11 w-full rounded-full border border-black/10 bg-black/[.03] px-4 text-base transition-colors placeholder:text-zinc-400 dark:border-white/10 dark:bg-white/[.04] dark:placeholder:text-zinc-500"
+          className="h-12 w-full rounded-full border border-black/10 bg-black/[.03] px-5 text-base transition-colors placeholder:text-zinc-400 dark:border-white/10 dark:bg-white/[.04] dark:placeholder:text-zinc-500"
         />
         <button
           type="submit"
