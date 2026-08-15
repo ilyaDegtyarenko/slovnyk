@@ -108,6 +108,7 @@ test.describe("study session", () => {
 
   test("the card flips over and back without moving the page", async ({
     page,
+    isMobile,
   }) => {
     await serveWordsFixture(page);
     await page.goto("/");
@@ -148,6 +149,30 @@ test.describe("study session", () => {
     // SPEC §7: revealing must not move the layout under the user's thumb.
     expect(await cardSection.boundingBox()).toEqual(restingBox);
 
+    // The flip axis follows the pointer: end over end (rotateX) on a desktop, sideways
+    // (rotateY) on a phone. In the matrix, an X turn flips m22 and a Y turn flips m11 —
+    // and a Z-axis spin would flip both, so this also catches the axes collapsing.
+    const rotator = page.locator("main section > div").first();
+    await rotator.evaluate(async (element) => {
+      await Promise.all(
+        element.getAnimations().map((animation) => animation.finished),
+      );
+    });
+    const { m11, m22 } = await rotator.evaluate((element) => {
+      const matrix = new DOMMatrixReadOnly(
+        getComputedStyle(element).transform,
+      );
+      return { m11: matrix.m11, m22: matrix.m22 };
+    });
+    expect(m11).toBeCloseTo(isMobile ? -1 : 1);
+    expect(m22).toBeCloseTo(isMobile ? 1 : -1);
+
+    // Exactly one speaker is exposed while the answer is showing — the back face's own,
+    // turned over with the card; its face-down twin is aria-hidden.
+    await expect(
+      page.getByRole("button", { name: /^Pronounce/ }),
+    ).toHaveCount(1);
+
     // Tapping the revealed card turns it back face down instead of rating anything.
     await page.getByRole("button", { name: FIXTURE_TRANSLATIONS }).click();
     await expect(faceDownCard).toBeVisible();
@@ -168,6 +193,60 @@ test.describe("study session", () => {
     await expect(good).toBeHidden();
     await page.keyboard.press("Space");
     await expect(good).toBeVisible();
+
+    // The same key walks both directions: Space turns the card back face down too.
+    await page.keyboard.press("Space");
+    await expect(good).toBeHidden();
+    await page.keyboard.press("Space");
+    await expect(good).toBeVisible();
+
+    // Every rating button says what it would schedule; a new card's Good is minutes.
+    await expect(good).toContainText("min");
+
+    // One answer moves the label by one, and the total stands still.
+    await good.click();
+    await expect(page.getByText("1/3")).toBeVisible();
+  });
+
+  test("a card rated Again rejoins the sitting instead of resetting the bar", async ({
+    page,
+  }) => {
+    await serveWordsFixture(page);
+    // Virtual time, so the minute FSRS gives an Again card can pass inside the test.
+    await page.clock.install();
+    await page.goto("/");
+
+    const showAnswer = page.getByRole("button", { name: "Show answer" });
+    const again = page.getByRole("button", { name: /^again/i });
+    const good = page.getByRole("button", { name: /^good/i });
+
+    await expect(showAnswer).toBeVisible();
+    await expect(page.getByText("0/3")).toBeVisible();
+
+    // The first card is forgotten: ts-fsrs wants it back in about a minute.
+    await page.locator("body").press("Space");
+    await again.click();
+    await expect(page.getByText("1/3")).toBeVisible();
+
+    // By the time the other two are answered, the forgotten card has come due.
+    await page.clock.fastForward("02:00");
+    await page.locator("body").press("Space");
+    await good.click();
+    await expect(page.getByText("2/3")).toBeVisible();
+    await page.locator("body").press("Space");
+    await good.click();
+
+    // The sitting carries on with the returned card: the total grew by one, and the
+    // answered count was not thrown away.
+    await expect(page.getByText("3/4")).toBeVisible();
+    await expect(showAnswer).toBeVisible();
+    await expect(page.getByText("1 to review")).toBeVisible();
+
+    // Undo reaches back across the refill: the third answer returns to the hand and the
+    // bar steps back inside the same, still-grown total.
+    await page.getByRole("button", { name: /^undo/i }).click();
+    await expect(page.getByText("2/4")).toBeVisible();
+    await expect(showAnswer).toBeVisible();
   });
 
   test("the blocking sync error keeps the keyboard away from the queue", async ({

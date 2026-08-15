@@ -121,14 +121,19 @@ Composed in this order:
 
 ### 5.1 `/` — Study session
 
-- One card at a time. Front: `term`. Tap / Space reveals `translation` and `example`.
-- A speaker button on the card pronounces `term` (English) through the platform's own
-  speech synthesis (Web Speech API) — no audio files, no network, works offline. The
-  button simply does not render where the API is missing.
-- After reveal: four rating buttons, with keyboard shortcuts `1`–`4`.
-- Header shows remaining counts: due / new.
-- A thin progress bar with an `answered/total` label shows how far through the current
-  queue the session is; undo takes the tick back.
+- One card at a time. Front: `term`. Tap / Space flips the card over to `translation`
+  and `example`, and flips it back again.
+- A speaker button on each face of the card pronounces `term` (English) through the
+  platform's own speech synthesis (Web Speech API) — no audio files, no network, works
+  offline. The button simply does not render where the API is missing.
+- After reveal: four rating buttons, with keyboard shortcuts `1`–`4`. Each button shows
+  the interval that answer would schedule (`10 min`, `3 d`), computed by ts-fsrs, so the
+  four choices explain themselves.
+- Header says what is left in plain words (`1 to review · 2 new`) and says nothing when
+  the queue is empty.
+- A thin progress bar with an `answered/total` label sits in the header block, on its
+  own row under the counts. A card that comes back mid-sitting (rated Again, or newly
+  due) grows the total rather than resetting the count; undo takes the tick back.
 - Empty state when the queue is done: what was studied today, when the next card is due,
   and a button to study ahead.
 
@@ -169,7 +174,9 @@ Composed in this order:
 - Dark by default, respects `prefers-color-scheme`.
 - Touch targets at least 44×44 px; rating buttons reachable with one thumb.
 - No layout shift when the answer is revealed — reserve the space.
-- Full keyboard operation on desktop: `Space` reveal, `1`–`4` rate, `U` undo last answer.
+- Full keyboard operation on desktop: `Space` flips the card (both directions), `1`–`4`
+  rate, `U` undo last answer. A group of sibling buttons (rating buttons, tag filter) is
+  one Tab stop; arrow keys move within the group.
 - Undo is limited to the immediately previous answer and rolls back both `progress` and
   the last `reviews` row.
 

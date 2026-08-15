@@ -162,6 +162,10 @@ describe("upcomingCards", () => {
       "flimsum",
       "trellup",
     ]);
+    // Each entry carries its own schedule, so studying ahead can preview intervals.
+    expect(upcoming.map((entry) => entry.card.due)).toEqual(
+      upcoming.map((entry) => entry.due),
+    );
   });
 
   it("offers only cards that are not due yet, since the due ones are the queue", () => {
@@ -223,10 +227,11 @@ describe("putInFront", () => {
     const undone: QueueCard = {
       word: storedWord(TRELLUP, "trellup", 2),
       kind: "due",
+      card: undefined,
     };
     const queue: QueueCard[] = [
-      { word: storedWord(FLIMSUM, "flimsum", 0), kind: "due" },
-      { word: storedWord(GORBIK, "gorbik", 1), kind: "new" },
+      { word: storedWord(FLIMSUM, "flimsum", 0), kind: "due", card: undefined },
+      { word: storedWord(GORBIK, "gorbik", 1), kind: "new", card: undefined },
     ];
 
     expect(putInFront(queue, undone).map((entry) => entry.word.term)).toEqual([
@@ -240,10 +245,11 @@ describe("putInFront", () => {
     const undone: QueueCard = {
       word: storedWord(FLIMSUM, "flimsum", 0),
       kind: "due",
+      card: undefined,
     };
     const queue: QueueCard[] = [
-      { word: storedWord(FLIMSUM, "flimsum", 0), kind: "due" },
-      { word: storedWord(GORBIK, "gorbik", 1), kind: "new" },
+      { word: storedWord(FLIMSUM, "flimsum", 0), kind: "due", card: undefined },
+      { word: storedWord(GORBIK, "gorbik", 1), kind: "new", card: undefined },
     ];
 
     expect(putInFront(queue, undone).map((entry) => entry.word.term)).toEqual([
@@ -254,33 +260,33 @@ describe("putInFront", () => {
 });
 
 describe("countsLabel", () => {
-  it("says what is left of the day, due and new apart", () => {
+  it("says what is left of the day in plain words, due and new apart", () => {
     const queue: QueueCard[] = [
-      { word: storedWord(FLIMSUM, "flimsum", 0), kind: "due" },
-      { word: storedWord(GORBIK, "gorbik", 1), kind: "new" },
-      { word: storedWord(TRELLUP, "trellup", 2), kind: "new" },
+      { word: storedWord(FLIMSUM, "flimsum", 0), kind: "due", card: undefined },
+      { word: storedWord(GORBIK, "gorbik", 1), kind: "new", card: undefined },
+      { word: storedWord(TRELLUP, "trellup", 2), kind: "new", card: undefined },
     ];
 
-    expect(countsLabel(queue)).toBe("Due 1 · New 2");
+    expect(countsLabel(queue)).toBe("1 to review · 2 new");
   });
 
-  it("counts nothing as nothing", () => {
-    expect(countsLabel([])).toBe("Due 0 · New 0");
+  it("says nothing at all about an empty queue", () => {
+    expect(countsLabel([])).toBe("");
   });
 
-  it("names cards pulled forward only while there are some", () => {
+  it("names only the kinds that are actually there", () => {
     const queue: QueueCard[] = [
-      { word: storedWord(FLIMSUM, "flimsum", 0), kind: "ahead" },
+      { word: storedWord(FLIMSUM, "flimsum", 0), kind: "ahead", card: undefined },
     ];
 
-    expect(countsLabel(queue)).toBe("Due 0 · New 0 · Ahead 1");
+    expect(countsLabel(queue)).toBe("1 ahead of schedule");
   });
 });
 
 describe("actionForKey", () => {
-  it("reveals on Space, whether or not the answer is showing", () => {
-    expect(actionForKey(" ", { revealed: false })).toEqual({ type: "reveal" });
-    expect(actionForKey(" ", { revealed: true })).toEqual({ type: "reveal" });
+  it("flips on Space, whichever face is up", () => {
+    expect(actionForKey(" ", { revealed: false })).toEqual({ type: "flip" });
+    expect(actionForKey(" ", { revealed: true })).toEqual({ type: "flip" });
   });
 
   it("undoes on U, in either case", () => {
@@ -414,6 +420,27 @@ describe("loadSession", () => {
 
     expect(undone).toBe(FLIMSUM);
     expect(await newCardIds(TODAY_MORNING)).toEqual([FLIMSUM]);
+  });
+
+  it("hands a due card its schedule and a new card none", async () => {
+    await seedSheet(3);
+    const due = progressDueAt(FLIMSUM, "2026-03-09T08:00:00.000Z");
+    await db.progress.put(due);
+
+    const result = await loadSession(TODAY_MORNING);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    const [first, ...introduced] = result.session.queue;
+    expect(first.kind).toBe("due");
+    expect(first.card).toEqual(due.card);
+    expect(introduced.length).toBeGreaterThan(0);
+    for (const card of introduced) {
+      expect(card.kind).toBe("new");
+      expect(card.card).toBeUndefined();
+    }
   });
 
   it("introduces nothing once the day has run past its cap", async () => {

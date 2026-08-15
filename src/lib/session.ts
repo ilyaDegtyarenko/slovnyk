@@ -10,7 +10,11 @@ import {
   type SyncState,
 } from "@/lib/db";
 import { buildQueue } from "@/lib/queue";
-import { REVIEW_RATINGS, type ReviewRating } from "@/lib/srs";
+import {
+  REVIEW_RATINGS,
+  type ReviewRating,
+  type SerializedCard,
+} from "@/lib/srs";
 import type { SyncError } from "@/lib/sync";
 
 // How many not-yet-due cards the "study ahead" button pulls forward.
@@ -33,11 +37,15 @@ export type QueueKind = "due" | "new" | "ahead";
 export type QueueCard = {
   word: StoredWord;
   kind: QueueKind;
+  // The schedule the card entered the queue with, which is what the rating buttons
+  // preview their intervals from. A new card has none yet.
+  card: SerializedCard | undefined;
 };
 
 export type UpcomingCard = {
   word: StoredWord;
   due: string;
+  card: SerializedCard;
 };
 
 export type StudySession = {
@@ -54,7 +62,7 @@ export type SessionResult =
   | { ok: false; error: { code: "STORAGE_UNAVAILABLE"; message: string } };
 
 export type StudyAction =
-  | { type: "reveal" }
+  | { type: "flip" }
   | { type: "undo" }
   | { type: "rate"; rating: ReviewRating }
   | { type: "ignore" };
@@ -92,12 +100,18 @@ export async function loadSession(now: Date): Promise<SessionResult> {
       newPerDay: newPerDay - countNewCards(todaysReviews),
     });
 
+    const cardById = new Map(
+      progress.map((row) => [row.id, row.card] as const),
+    );
+
     return {
       ok: true,
       session: {
         queue: [
-          ...queue.dueCards.map((word) => queueCard(word, "due")),
-          ...queue.newCards.map((word) => queueCard(word, "new")),
+          ...queue.dueCards.map((word) =>
+            queueCard(word, "due", cardById.get(word.id)),
+          ),
+          ...queue.newCards.map((word) => queueCard(word, "new", undefined)),
         ],
         upcoming: upcomingCards({
           words,
@@ -153,7 +167,7 @@ export function upcomingCards(input: {
     .flatMap((row) => {
       const word = wordById.get(row.id);
       return word !== undefined && Date.parse(row.due) > input.now.getTime()
-        ? [{ word, due: row.due }]
+        ? [{ word, due: row.due, card: row.card }]
         : [];
     })
     .sort(
@@ -170,26 +184,37 @@ export function putInFront(queue: QueueCard[], card: QueueCard): QueueCard[] {
   return [card, ...queue.filter((entry) => entry.word.id !== card.word.id)];
 }
 
+// Plain words, and only for what is actually there: "Due 0 · New 0" over a finished
+// queue read as a riddle, so an empty queue says nothing at all.
 export function countsLabel(queue: QueueCard[]): string {
   const counts: Record<QueueKind, number> = { due: 0, new: 0, ahead: 0 };
   for (const card of queue) {
     counts[card.kind] += 1;
   }
 
-  const label = `Due ${counts.due} · New ${counts.new}`;
-  // Cards pulled forward are named only while there are some, so an ordinary day's header
-  // says nothing about a button the user did not press.
-  return counts.ahead === 0 ? label : `${label} · Ahead ${counts.ahead}`;
+  const parts: string[] = [];
+  if (counts.due > 0) {
+    parts.push(`${counts.due} to review`);
+  }
+  if (counts.new > 0) {
+    parts.push(`${counts.new} new`);
+  }
+  if (counts.ahead > 0) {
+    parts.push(`${counts.ahead} ahead of schedule`);
+  }
+
+  return parts.join(" · ");
 }
 
-// SPEC §7: Space reveals, `1`-`4` rate, `U` undoes the last answer. A rating pressed before
-// the answer is showing would grade a card the user has not read yet, so it is ignored.
+// SPEC §7: Space flips the card — over to the answer and back again — `1`-`4` rate, `U`
+// undoes the last answer. A rating pressed before the answer is showing would grade a
+// card the user has not read yet, so it is ignored.
 export function actionForKey(
   key: string,
   options: { revealed: boolean },
 ): StudyAction {
   if (key === " ") {
-    return { type: "reveal" };
+    return { type: "flip" };
   }
 
   if (key === "u" || key === "U") {
@@ -270,6 +295,10 @@ async function readReviewsSince(from: Date): Promise<ReviewRow[]> {
     .toArray();
 }
 
-function queueCard(word: StoredWord, kind: QueueKind): QueueCard {
-  return { word, kind };
+function queueCard(
+  word: StoredWord,
+  kind: QueueKind,
+  card: SerializedCard | undefined,
+): QueueCard {
+  return { word, kind, card };
 }

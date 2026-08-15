@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { Rating, State, createEmptyCard, fsrs } from "ts-fsrs";
 import {
   REVIEW_RATINGS,
+  formatInterval,
   initialCard,
+  previewIntervals,
   review,
   type ReviewRating,
 } from "@/lib/srs";
@@ -109,5 +111,49 @@ describe("review", () => {
     review(before, "again", new Date(before.due));
 
     expect(before).toEqual(snapshot);
+  });
+});
+
+describe("formatInterval", () => {
+  const MINUTE = 60_000;
+  const HOUR = 60 * MINUTE;
+  const DAY = 24 * HOUR;
+
+  it("speaks each span in the unit a person would pick", () => {
+    expect(formatInterval(30 * 1000)).toBe("1 min");
+    expect(formatInterval(10 * MINUTE)).toBe("10 min");
+    expect(formatInterval(90 * MINUTE)).toBe("2 h");
+    expect(formatInterval(25 * HOUR)).toBe("1 d");
+    expect(formatInterval(45 * DAY)).toBe("45 d");
+    expect(formatInterval(100 * DAY)).toBe("3 mo");
+    expect(formatInterval(550 * DAY)).toBe("1.5 y");
+  });
+
+  it("never says 60 of a unit when the next one is due", () => {
+    expect(formatInterval(59.7 * MINUTE)).toBe("1 h");
+    expect(formatInterval(23.9 * HOUR)).toBe("1 d");
+  });
+});
+
+describe("previewIntervals", () => {
+  it("promises a fresh card exactly what answering it would schedule", () => {
+    const previews = previewIntervals(undefined, NOW);
+
+    for (const rating of REVIEW_RATINGS) {
+      const due = Date.parse(review(initialCard(NOW), rating, NOW).card.due);
+      expect(previews[rating]).toBe(formatInterval(due - NOW.getTime()));
+    }
+  });
+
+  it("previews the card it is given, not a fresh one", () => {
+    const learned = review(initialCard(NOW), "easy", NOW).card;
+    const later = new Date(learned.due);
+
+    const previews = previewIntervals(learned, later);
+
+    // A settled card comes back in days; a forgotten one comes back within the hour.
+    expect(previews.again).toMatch(/min$/);
+    expect(previews.good).toMatch(/ (d|mo)$/);
+    expect(previews.good).not.toBe(previewIntervals(undefined, later).good);
   });
 });

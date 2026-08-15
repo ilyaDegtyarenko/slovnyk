@@ -52,6 +52,63 @@ export function initialCard(now: Date): SerializedCard {
   return serializeCard(createEmptyCard(now));
 }
 
+export type IntervalPreview = Record<ReviewRating, string>;
+
+// What each of the four answers would schedule, worded for a button label. Computed
+// through `review` itself, so the promise on the button and the interval an answer
+// actually records can never disagree.
+export function previewIntervals(
+  card: SerializedCard | undefined,
+  now: Date,
+): IntervalPreview {
+  const base = card ?? initialCard(now);
+  return {
+    again: previewOf(base, "again", now),
+    hard: previewOf(base, "hard", now),
+    good: previewOf(base, "good", now),
+    easy: previewOf(base, "easy", now),
+  };
+}
+
+function previewOf(
+  card: SerializedCard,
+  rating: ReviewRating,
+  now: Date,
+): string {
+  const outcome = review(card, rating, now);
+  return formatInterval(
+    Date.parse(outcome.card.due) - Date.parse(outcome.reviewedAt),
+  );
+}
+
+// Rounded the way a person says it, not the way a clock counts it: "10 min", "3 h",
+// "45 d", "4 mo", "1.5 y". Each unit is rounded first so 59.7 minutes says "1 h",
+// never "60 min".
+export function formatInterval(durationMillis: number): string {
+  const minutes = Math.round(durationMillis / 60_000);
+  if (minutes < 60) {
+    return `${Math.max(1, minutes)} min`;
+  }
+
+  const hours = Math.round(durationMillis / 3_600_000);
+  if (hours < 24) {
+    return `${hours} h`;
+  }
+
+  const days = Math.round(durationMillis / 86_400_000);
+  if (days < 60) {
+    return `${days} d`;
+  }
+
+  const months = Math.round(durationMillis / (30.437 * 86_400_000));
+  if (months < 12) {
+    return `${months} mo`;
+  }
+
+  const years = durationMillis / (365.25 * 86_400_000);
+  return `${Math.round(years * 10) / 10} y`;
+}
+
 export function review(
   card: SerializedCard,
   rating: ReviewRating,

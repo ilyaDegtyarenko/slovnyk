@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Timestamp } from "@/components/timestamp";
+import { useRovingFocus } from "@/components/use-roving-focus";
 import {
   db,
   readProgress,
@@ -69,6 +70,9 @@ export default function ListPage() {
     return [...known].sort((left, right) => left.localeCompare(right));
   }, [list]);
 
+  // "All tags" plus one chip per tag: a single Tab stop, arrows walk the chips.
+  const tagRovingFocus = useRovingFocus(tags.length + 1);
+
   const shown = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return (list?.words ?? []).filter(
@@ -130,21 +134,28 @@ export default function ListPage() {
         </div>
 
         {/* Toggle chips instead of a native select: every option is one tap, and nothing
-            here looks like the platform's form chrome. */}
+            here looks like the platform's form chrome. `toolbar` rather than `group`,
+            because that is what tells assistive tech the arrow keys are live here. */}
         {tags.length === 0 ? null : (
           <div
-            role="group"
+            role="toolbar"
             aria-label="Filter by tag"
+            {...tagRovingFocus.groupProps}
             className="flex flex-wrap items-center gap-1.5"
           >
-            <TagChip active={tag === ALL_TAGS} onSelect={() => setTag(ALL_TAGS)}>
+            <TagChip
+              active={tag === ALL_TAGS}
+              onSelect={() => setTag(ALL_TAGS)}
+              {...tagRovingFocus.itemProps(0)}
+            >
               All tags
             </TagChip>
-            {tags.map((known) => (
+            {tags.map((known, index) => (
               <TagChip
                 key={known}
                 active={tag === known}
                 onSelect={() => setTag(known)}
+                {...tagRovingFocus.itemProps(index + 1)}
               >
                 {known}
               </TagChip>
@@ -237,16 +248,22 @@ export default function ListPage() {
 function TagChip({
   active,
   onSelect,
+  tabIndex,
+  onFocus,
   children,
 }: {
   active: boolean;
   onSelect: () => void;
+  tabIndex: number;
+  onFocus: () => void;
   children: string;
 }) {
   return (
     <button
       type="button"
       aria-pressed={active}
+      tabIndex={tabIndex}
+      onFocus={onFocus}
       onClick={onSelect}
       className={`flex h-11 items-center rounded-full px-4 text-sm transition-[background-color,color,transform] duration-150 active:scale-[0.97] ${
         active

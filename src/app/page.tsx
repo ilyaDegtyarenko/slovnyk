@@ -10,6 +10,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { Timestamp } from "@/components/timestamp";
+import { useRovingFocus } from "@/components/use-roving-focus";
 import { recordReview, undoLastReview } from "@/lib/db";
 import {
   actionForKey,
@@ -21,7 +22,11 @@ import {
   type StudySession,
 } from "@/lib/session";
 import { pronounce, speechAvailable, stopPronunciation } from "@/lib/speech";
-import { REVIEW_RATINGS, type ReviewRating } from "@/lib/srs";
+import {
+  previewIntervals,
+  REVIEW_RATINGS,
+  type ReviewRating,
+} from "@/lib/srs";
 import { syncFromApi, type SyncError } from "@/lib/sync";
 
 const CARD_FACE_CLASS_NAME =
@@ -32,6 +37,12 @@ const CARD_FACE_CLASS_NAME =
 // collapse to zero and leave the whole answer reachable.
 const CARD_FACE_CONTENT_CLASS_NAME =
   "my-auto flex w-full flex-col items-center gap-5";
+
+// One flip, two axes: a phone turns the card over sideways, a desktop turns it end over
+// end (the owner's ask). The pointer-fine pair swaps the axis and nothing else, and the
+// same three utilities also pre-turn the back face and its speaker.
+const FLIP_ROTATION_CLASS_NAME =
+  "rotate-y-180 pointer-fine:rotate-x-180 pointer-fine:rotate-y-0";
 
 const PILL_BUTTON_CLASS_NAME =
   "flex h-11 items-center gap-2 rounded-full border border-black/10 px-4 text-sm transition-[background-color,transform] duration-150 hover:bg-black/[.04] active:scale-[0.97] disabled:opacity-40 disabled:hover:bg-transparent disabled:active:scale-100 dark:border-white/15 dark:hover:bg-white/[.06]";
@@ -63,6 +74,9 @@ type Undoable = { card: QueueCard; seq: number };
 export default function StudyPage() {
   const [session, setSession] = useState<StudySession | null>(null);
   const [queue, setQueue] = useState<QueueCard[]>([]);
+  // True for the moment between spending the queue and hearing what came due meanwhile;
+  // it keeps "Done for today" from flashing when the sitting is in fact continuing.
+  const [refilling, setRefilling] = useState(false);
   // Progress counts this sitting only: answered plus what is still in hand is the total
   // the bar runs to. Undo gives the card back and takes the tick with it.
   const [answeredThisSession, setAnsweredThisSession] = useState(0);
@@ -158,10 +172,23 @@ export default function StudyPage() {
 
         const rest = queue.slice(1);
         setQueue(rest);
-        // The queue is spent: ask the database what is left, which is also what the
-        // finished screen reports.
+        // The queue is spent: whatever has come due meanwhile — above all a card rated
+        // Again earlier in this sitting — joins the same run, so the bar's total grows
+        // instead of the count starting over from nothing. The just-answered id stays
+        // barred, which is safe: ts-fsrs' shortest step is a minute, so the refill
+        // cannot hand that card straight back.
         if (rest.length === 0) {
-          await restart();
+          setRefilling(true);
+          try {
+            const refilled = await refresh();
+            if (refilled !== null) {
+              setQueue(refilled.queue);
+            }
+            // A Space pressed during the wait above must not put the next card face up.
+            setRevealed(false);
+          } finally {
+            setRefilling(false);
+          }
         }
       } catch (cause) {
         // The answer never landed, so the card has to stay answerable.
@@ -171,7 +198,7 @@ export default function StudyPage() {
         answering.current = false;
       }
     },
-    [queue, restart],
+    [queue, refresh],
   );
 
   const undo = useCallback(async () => {
@@ -212,7 +239,11 @@ export default function StudyPage() {
     }
 
     setQueue(
-      session.upcoming.map((entry) => ({ word: entry.word, kind: "ahead" })),
+      session.upcoming.map((entry) => ({
+        word: entry.word,
+        kind: "ahead",
+        card: entry.card,
+      })),
     );
     setAnsweredThisSession(0);
     setRevealed(false);
@@ -229,6 +260,23 @@ export default function StudyPage() {
   const syncedAt = session?.syncState?.syncedAt;
   const notice = syncError === null ? null : syncNotice(syncError);
   const blocked = notice !== null && notice.blocking && !syncErrorSeen;
+
+  // Answered plus still in hand is the total the bar runs to; a refill mid-sitting grows
+  // it, undo shrinks the answered side back.
+  const sessionTotal = answeredThisSession + queue.length;
+  // Refilling counts as studying: the bar staying put is the whole point of the refill.
+  const studying =
+    session !== null &&
+    storageError === null &&
+    !blocked &&
+    (current !== undefined || refilling);
+
+  // Tab lands on Good, the answer most sittings reach for; one Tab-and-Enter must not
+  // accidentally mean Again.
+  const ratingRovingFocus = useRovingFocus(
+    REVIEW_RATINGS.length,
+    REVIEW_RATINGS.indexOf("good"),
+  );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -247,15 +295,15 @@ export default function StudyPage() {
         return;
       }
 
-      // A focused button belongs to the browser: Space has to press it rather than reveal
+      // A focused button belongs to the browser: Space has to press it rather than flip
       // the card behind it.
-      if (action.type === "reveal" && event.target instanceof HTMLButtonElement) {
+      if (action.type === "flip" && event.target instanceof HTMLButtonElement) {
         return;
       }
 
       event.preventDefault();
-      if (action.type === "reveal") {
-        setRevealed(true);
+      if (action.type === "flip") {
+        setRevealed((facingUp) => !facingUp);
         return;
       }
       if (action.type === "undo") {
@@ -314,6 +362,18 @@ export default function StudyPage() {
       );
     }
 
+    // Between the last card and the refill's answer there is nothing to show yet — and
+    // nothing to celebrate: a quiet placeholder the size of the card keeps "Done for
+    // today" honest and the layout still.
+    if (current === undefined && refilling) {
+      return (
+        <div aria-hidden className="flex flex-1 flex-col justify-center gap-4">
+          <div className="h-[clamp(320px,58dvh,520px)] rounded-3xl border border-black/5 bg-black/[0.03] dark:border-white/5 dark:bg-white/[0.03]" />
+          <div className="h-20" />
+        </div>
+      );
+    }
+
     if (current === undefined) {
       const next = session.upcoming[0];
       return (
@@ -363,149 +423,133 @@ export default function StudyPage() {
       );
     }
 
-    const sessionTotal = answeredThisSession + queue.length;
+    const intervalByRating = previewIntervals(current.card, new Date());
     return (
       <div className="flex flex-1 flex-col justify-center gap-4">
-        <div className="flex items-center gap-3 px-1">
-          <div
-            role="progressbar"
-            aria-label="Session progress"
-            aria-valuemin={0}
-            aria-valuemax={sessionTotal}
-            aria-valuenow={answeredThisSession}
-            className="h-1 flex-1 overflow-hidden rounded-full bg-black/[.06] dark:bg-white/[.08]"
-          >
-            <div
-              className="h-full rounded-full bg-foreground motion-safe:transition-[width] motion-safe:duration-300"
-              style={{
-                width: `${sessionTotal === 0 ? 0 : (answeredThisSession / sessionTotal) * 100}%`,
-              }}
-            />
-          </div>
-          <span className="text-xs font-medium tabular-nums text-zinc-500 dark:text-zinc-400">
-            {answeredThisSession}/{sessionTotal}
-          </span>
-        </div>
-
         {/* The key remounts the card face down for every word, which is also what plays
             the entrance animation between cards. */}
         <section
           key={current.word.id}
           className="relative flex h-[clamp(320px,58dvh,520px)] flex-col [perspective:1600px] motion-safe:animate-card-in"
         >
-          {/* The face-down name carries the word itself, so a screen reader hears what it
-              is being asked to recall, not just that an answer exists. */}
-          <button
-            type="button"
-            aria-label={
-              revealed ? undefined : `${current.word.term} — show answer`
-            }
-            onClick={() => setRevealed((facingUp) => !facingUp)}
-            className={`relative min-h-72 flex-1 cursor-pointer rounded-3xl transform-3d motion-safe:transition-transform motion-safe:duration-500 ${
-              revealed ? "rotate-y-180" : ""
+          {/* The rotation lives on this wrapper rather than on the flip button itself, so
+              the speaker buttons — siblings of the button, buttons do not nest — turn
+              over together with the card instead of hanging in front of it. */}
+          <div
+            className={`relative min-h-72 flex-1 transform-3d motion-safe:transition-transform motion-safe:duration-500 ${
+              revealed ? FLIP_ROTATION_CLASS_NAME : ""
             }`}
           >
-            {/* tabIndex -1: Chromium otherwise makes an overflowing face its own tab stop,
-                including the aria-hidden one. */}
-            <span
-              aria-hidden={revealed}
-              tabIndex={-1}
-              className={CARD_FACE_CLASS_NAME}
-            >
-              {current.kind === "new" ? (
-                <span className="absolute top-5 rounded-full border border-sky-500/40 px-2.5 py-0.5 text-xs font-medium text-sky-600 dark:text-sky-400">
-                  New word
-                </span>
-              ) : null}
-              <span className={CARD_FACE_CONTENT_CLASS_NAME}>
-                <span className="block max-w-full break-words text-balance text-4xl font-semibold tracking-tight">
-                  {current.word.term}
-                </span>
-              </span>
-            </span>
-
-            <span
-              aria-hidden={!revealed}
-              tabIndex={-1}
-              className={`${CARD_FACE_CLASS_NAME} rotate-y-180`}
-            >
-              <span className={CARD_FACE_CONTENT_CLASS_NAME}>
-                <span className="block text-sm text-zinc-500 dark:text-zinc-400">
-                  {current.word.term}
-                </span>
-                <span className="block max-w-full break-words text-balance text-3xl font-semibold tracking-tight">
-                  {current.word.translation}
-                </span>
-                {current.word.example === "" ? null : (
-                  <span className="block max-w-[min(28rem,100%)] break-words text-balance text-base italic text-zinc-600 dark:text-zinc-400">
-                    {current.word.example}
-                  </span>
-                )}
-                {current.word.tags.length === 0 ? null : (
-                  <span className="flex flex-wrap justify-center gap-1.5">
-                    {current.word.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="rounded-full bg-black/[0.05] px-2.5 py-0.5 text-xs text-zinc-600 dark:bg-white/10 dark:text-zinc-300"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </span>
-                )}
-              </span>
-            </span>
-          </button>
-
-          {/* A sibling of the flip button, never a child: buttons do not nest, and hearing
-              the word must not turn the card. */}
-          {speechReady ? (
+            {/* The face-down name carries the word itself, so a screen reader hears what it
+                is being asked to recall, not just that an answer exists. */}
             <button
               type="button"
-              aria-label={`Pronounce “${current.word.term}”`}
-              onClick={(event) => {
-                // A clicked button keeps focus, and the Space guard above would then
-                // feed every Space to this button instead of flipping the card. detail
-                // is 0 for keyboard activation, where the focus is the user's own.
-                if (event.detail > 0) {
-                  event.currentTarget.blur();
-                }
-                pronounce(current.word.term);
-              }}
-              className="absolute right-2.5 top-2.5 z-10 flex size-11 items-center justify-center rounded-full text-zinc-400 transition-[background-color,color,transform] duration-150 hover:bg-black/[.05] hover:text-foreground active:scale-95 dark:text-zinc-500 dark:hover:bg-white/10 dark:hover:text-foreground"
+              aria-label={
+                revealed ? undefined : `${current.word.term} — show answer`
+              }
+              onClick={() => setRevealed((facingUp) => !facingUp)}
+              className="absolute inset-0 cursor-pointer rounded-3xl transform-3d"
             >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden
-                className="size-5"
+              {/* tabIndex -1: Chromium otherwise makes an overflowing face its own tab stop,
+                  including the aria-hidden one. */}
+              <span
+                aria-hidden={revealed}
+                tabIndex={-1}
+                className={CARD_FACE_CLASS_NAME}
               >
-                <path d="M11 5.5 6.8 9H4.5a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h2.3l4.2 3.5v-13Z" />
-                <path d="M15 8.7a4.7 4.7 0 0 1 0 6.6" />
-                <path d="M17.8 6.2a8.4 8.4 0 0 1 0 11.6" />
-              </svg>
+                {current.kind === "new" ? (
+                  <span className="absolute top-5 rounded-full border border-sky-500/40 px-2.5 py-0.5 text-xs font-medium text-sky-600 dark:text-sky-400">
+                    New word
+                  </span>
+                ) : null}
+                <span className={CARD_FACE_CONTENT_CLASS_NAME}>
+                  <span className="block max-w-full break-words text-balance text-4xl font-semibold tracking-tight">
+                    {current.word.term}
+                  </span>
+                </span>
+              </span>
+
+              <span
+                aria-hidden={!revealed}
+                tabIndex={-1}
+                className={`${CARD_FACE_CLASS_NAME} ${FLIP_ROTATION_CLASS_NAME}`}
+              >
+                <span className={CARD_FACE_CONTENT_CLASS_NAME}>
+                  <span className="block text-sm text-zinc-500 dark:text-zinc-400">
+                    {current.word.term}
+                  </span>
+                  <span className="block max-w-full break-words text-balance text-3xl font-semibold tracking-tight">
+                    {current.word.translation}
+                  </span>
+                  {current.word.example === "" ? null : (
+                    <span className="block max-w-[min(28rem,100%)] break-words text-balance text-base italic text-zinc-600 dark:text-zinc-400">
+                      {current.word.example}
+                    </span>
+                  )}
+                  {current.word.tags.length === 0 ? null : (
+                    <span className="flex flex-wrap justify-center gap-1.5">
+                      {current.word.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-full bg-black/[0.05] px-2.5 py-0.5 text-xs text-zinc-600 dark:bg-white/10 dark:text-zinc-300"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                </span>
+              </span>
             </button>
-          ) : null}
+
+            {/* One speaker per face: each turns over with its own side of the card, and
+                only the face-up copy is offered to the ear or the Tab key. The back one
+                sits inside a full-size counter-rotated layer, whose rotation cancels the
+                card's and puts it — unmirrored — in the same corner. */}
+            {speechReady ? (
+              <>
+                <PronounceButton
+                  term={current.word.term}
+                  offstage={revealed}
+                  className="absolute right-2.5 top-2.5 z-10 backface-hidden"
+                />
+                <span
+                  className={`pointer-events-none absolute inset-0 backface-hidden ${FLIP_ROTATION_CLASS_NAME}`}
+                >
+                  <PronounceButton
+                    term={current.word.term}
+                    offstage={!revealed}
+                    className="absolute right-2.5 top-2.5 z-10"
+                  />
+                </span>
+              </>
+            ) : null}
+          </div>
         </section>
 
         {/* Fixed height, so trading the hint for the rating buttons moves nothing. */}
         <div className="h-20">
           {revealed ? (
-            <div className="grid h-full grid-cols-4 gap-2 motion-safe:animate-rise-in">
+            <div
+              role="toolbar"
+              aria-label="Rate this card"
+              {...ratingRovingFocus.groupProps}
+              className="grid h-full grid-cols-4 gap-2 motion-safe:animate-rise-in"
+            >
               {REVIEW_RATINGS.map((rating, index) => (
                 <button
                   key={rating}
                   type="button"
+                  {...ratingRovingFocus.itemProps(index)}
                   onClick={() => void answer(rating)}
                   className="flex h-full flex-col items-center justify-center gap-0.5 rounded-2xl border border-black/10 text-sm font-medium capitalize transition-[background-color,transform] duration-150 hover:bg-black/[.04] active:scale-[0.97] dark:border-white/10 dark:hover:bg-white/[.06]"
                 >
                   <span className={colorByRating[rating]}>{rating}</span>
-                  <span className="font-mono text-[11px] text-zinc-400 pointer-coarse:hidden dark:text-zinc-500">
-                    {index + 1}
+                  {/* `normal-case` shields the interval from the button's capitalize —
+                      "10 Min" is nobody's unit. */}
+                  <span className="font-mono text-[11px] normal-case text-zinc-400 dark:text-zinc-500">
+                    {intervalByRating[rating]}
+                    <span className="pointer-coarse:hidden"> · {index + 1}</span>
                   </span>
                 </button>
               ))}
@@ -532,29 +576,58 @@ export default function StudyPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
-      <header className="flex items-center justify-between gap-3">
-        <h1 className="sr-only">Study</h1>
-        {session === null ? (
-          <span aria-hidden />
-        ) : (
-          <p
-            aria-live="polite"
-            className="text-sm font-medium tabular-nums text-zinc-500 dark:text-zinc-400"
+      <header className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="sr-only">Study</h1>
+          {/* Mounted even while it says nothing: a live region announces changes only
+              if it already existed, and a refill mid-sitting is such a change. */}
+          {session === null ? (
+            <span aria-hidden />
+          ) : (
+            <p
+              aria-live="polite"
+              className="text-sm font-medium tabular-nums text-zinc-500 dark:text-zinc-400"
+            >
+              {countsLabel(queue)}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => void undo()}
+            disabled={undoable === null}
+            className={PILL_BUTTON_CLASS_NAME}
           >
-            {countsLabel(queue)}
-          </p>
-        )}
-        <button
-          type="button"
-          onClick={() => void undo()}
-          disabled={undoable === null}
-          className={PILL_BUTTON_CLASS_NAME}
-        >
-          Undo
-          <span className="font-mono text-xs opacity-60 pointer-coarse:hidden">
-            U
-          </span>
-        </button>
+            Undo
+            <span className="font-mono text-xs opacity-60 pointer-coarse:hidden">
+              U
+            </span>
+          </button>
+        </div>
+
+        {/* Up here with the header, apart from the card: the bar measures the sitting,
+            not the word on screen. */}
+        {studying ? (
+          <div className="flex items-center gap-3">
+            <div
+              role="progressbar"
+              aria-label="Session progress"
+              aria-valuemin={0}
+              aria-valuemax={sessionTotal}
+              aria-valuenow={answeredThisSession}
+              className="h-1 flex-1 overflow-hidden rounded-full bg-black/[.05] dark:bg-white/[.06]"
+            >
+              <div
+                className="h-full rounded-full bg-foreground motion-safe:transition-[width] motion-safe:duration-300"
+                style={{
+                  width: `${sessionTotal === 0 ? 0 : (answeredThisSession / sessionTotal) * 100}%`,
+                }}
+              />
+            </div>
+            <span className="text-xs font-medium tabular-nums text-zinc-500 dark:text-zinc-400">
+              {answeredThisSession}/{sessionTotal}
+            </span>
+          </div>
+        ) : null}
       </header>
 
       {undoNotice === null ? null : (
@@ -639,6 +712,64 @@ export default function StudyPage() {
         renderBody()
       )}
     </main>
+  );
+}
+
+function PronounceButton({
+  term,
+  offstage,
+  className,
+}: {
+  term: string;
+  // The copy on the turned-away face: still in the DOM, but no ear, tap, or Tab key
+  // should find it there.
+  offstage: boolean;
+  className: string;
+}) {
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+
+  // A speaker that turns away while holding focus would keep it invisibly, and the
+  // Space guard would then feed every Space to it instead of flipping the card.
+  useEffect(() => {
+    const button = buttonRef.current;
+    if (offstage && button !== null && button === document.activeElement) {
+      button.blur();
+    }
+  }, [offstage]);
+
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      aria-label={`Pronounce “${term}”`}
+      aria-hidden={offstage}
+      tabIndex={offstage ? -1 : 0}
+      onClick={(event) => {
+        // A clicked button keeps focus, and the Space guard above would then feed every
+        // Space to this button instead of flipping the card. detail is 0 for keyboard
+        // activation, where the focus is the user's own.
+        if (event.detail > 0) {
+          event.currentTarget.blur();
+        }
+        pronounce(term);
+      }}
+      className={`${offstage ? "pointer-events-none" : "pointer-events-auto"} flex size-11 items-center justify-center rounded-full text-zinc-400 transition-[background-color,color,transform] duration-150 hover:bg-black/[.05] hover:text-foreground active:scale-95 dark:text-zinc-500 dark:hover:bg-white/10 dark:hover:text-foreground ${className}`}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+        className="size-5"
+      >
+        <path d="M11 5.5 6.8 9H4.5a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h2.3l4.2 3.5v-13Z" />
+        <path d="M15 8.7a4.7 4.7 0 0 1 0 6.6" />
+        <path d="M17.8 6.2a8.4 8.4 0 0 1 0 11.6" />
+      </svg>
+    </button>
   );
 }
 
