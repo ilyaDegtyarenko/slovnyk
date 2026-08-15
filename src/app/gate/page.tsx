@@ -18,6 +18,26 @@ export default async function GatePage({ searchParams }: PageProps<"/gate">) {
 
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-4 px-4 py-6 font-sans">
+      <svg
+        viewBox="0 0 512 512"
+        role="img"
+        aria-label="slovnyk"
+        className="mx-auto mb-2 h-14 w-14"
+      >
+        <rect width="512" height="512" rx="115" fill="#101014" />
+        <text
+          x="212"
+          y="368"
+          textAnchor="middle"
+          fontFamily="system-ui, sans-serif"
+          fontWeight="700"
+          fontSize="380"
+          fill="#f4f4f5"
+        >
+          s
+        </text>
+        <circle cx="376" cy="338" r="30" fill="#6366f1" />
+      </svg>
       <form method="post" action="/api/gate" className="flex flex-col gap-3">
         <input
           type="password"
