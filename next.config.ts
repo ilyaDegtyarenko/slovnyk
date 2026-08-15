@@ -32,6 +32,10 @@ const withSerwist = withSerwistInit({
   // Serwist reloads the page when the connection comes back unless it is told not to. That
   // would throw away a card revealed in airplane mode the moment the plane lands.
   reloadOnOnline: false,
+  // Registration lives in <RegisterServiceWorker /> instead of Serwist's injected script:
+  // a worker installed on the key-gate page would precache the gate's HTML as the app
+  // shell, and the installed app would then open on the gate forever.
+  register: false,
   // Serwist bundles the service worker with a webpack plugin — which is why `build` passes
   // `--webpack` — and a development server has no service worker to bundle.
   disable: process.env.NODE_ENV !== "production",

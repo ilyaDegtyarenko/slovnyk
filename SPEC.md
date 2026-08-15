@@ -14,7 +14,8 @@ Version 1. Single user (the owner). No authentication, no server-side state.
 
 Explicitly out of scope — do not implement, do not scaffold for:
 
-- User accounts, login, multi-user support
+- User accounts, login, multi-user support — the deployed instance is instead locked
+  behind a single shared access key (§5.6)
 - Server-side database or cross-device sync of progress
 - Images, diagrams
 - Typing-answer mode, multiple choice, matching games
@@ -165,6 +166,24 @@ Composed in this order:
 - Invalid sheet rows with row numbers and the reason each failed.
 - Last sync timestamp and last sync error, if any.
 - This page is what the user opens when the tutor breaks the format.
+
+### 5.6 `/gate` — access key
+
+- A deployed instance is reachable by anyone with the URL, so when the `APP_KEY`
+  environment variable is set, every page and `/api/words` require it. This is one
+  shared passphrase asked once per device — not accounts or login, which stay out of
+  scope (§2).
+- `/gate` is the only open page: entering the key sets a year-long HttpOnly cookie
+  holding a digest of the key (never the key itself) and returns to `/`. A wrong key
+  re-asks with an error.
+- Without the cookie, pages redirect to `/gate`; `/api/*` answers `401` instead of
+  redirecting. Static assets, the manifest, icons, and `sw.js` stay open — the browser
+  fetches the manifest without cookies during install, and none of them contain a word.
+- The service worker registers only outside `/gate`, so a worker installed while the
+  gate is shut can never precache the gate page as the app shell.
+- Unset `APP_KEY` disables the gate entirely; development and the test suites run open.
+- Rotating `APP_KEY` invalidates every device's cookie at once; each device re-enters
+  the new key at `/gate`.
 
 ## 6. PWA
 
