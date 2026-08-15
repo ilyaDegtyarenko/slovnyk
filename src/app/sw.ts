@@ -7,6 +7,7 @@ import {
   type PrecacheEntry,
   type SerwistGlobalConfig,
 } from "serwist";
+import { isCacheableShellResponse } from "../lib/precache";
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -28,6 +29,16 @@ const ALWAYS_FRESH_PATHS = new Set(["/api/words", "/health"]);
 
 const serwist = new Serwist({
   precacheEntries: self.__SW_MANIFEST,
+  // Any `cacheWillUpdate` here replaces Serwist's own status check, so the predicate
+  // carries the >=400 refusal as well as the redirect one.
+  precacheOptions: {
+    plugins: [
+      {
+        cacheWillUpdate: async ({ response }) =>
+          isCacheableShellResponse(response) ? response : null,
+      },
+    ],
+  },
   // A stale service worker would keep serving the previous build's assets to an installed
   // app that has no visible reload button, so a new one takes over as soon as it is ready.
   skipWaiting: true,

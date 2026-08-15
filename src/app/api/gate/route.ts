@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
-  GATE_COOKIE_MAX_AGE_SECONDS,
   GATE_COOKIE_NAME,
   constantTimeEqual,
+  gateCookieAttributes,
   gateCookieValue,
 } from "@/lib/gate";
 
@@ -41,12 +41,6 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   const response = seeOther("/");
-  response.cookies.set(GATE_COOKIE_NAME, expected, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: GATE_COOKIE_MAX_AGE_SECONDS,
-  });
+  response.cookies.set(GATE_COOKIE_NAME, expected, gateCookieAttributes());
   return response;
 }

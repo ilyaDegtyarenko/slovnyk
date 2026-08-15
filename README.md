@@ -44,6 +44,7 @@ worker in DevTools → Application → Service workers.
 | `SHEET_CSV_URL`           | yes      | Full published-to-web CSV URL (`/d/e/2PACX-.../pub?...&output=csv`) |
 | `NEXT_PUBLIC_SHEET_EDIT_URL` | no    | Normal sheet URL, used for the "edit in the sheet" link in the UI |
 | `NEXT_PUBLIC_NEW_PER_DAY` | no       | New-card intake per day, defaults to `10`                        |
+| `APP_KEY`                 | no       | Shared access key for a deployed instance (SPEC §5.6). When set, every page and the words API ask for it once per device at `/gate`. Use a long random phrase — its entropy is the only thing limiting guesses. Rotating it logs every device out at once. Unset = the app is open, which is how dev and the test suites run. |
 
 `SHEET_CSV_URL` is taken verbatim from `File → Publish to web → sheet: Words → CSV`.
 It is not derivable from the spreadsheet id — see `docs/sheet-setup.md`.

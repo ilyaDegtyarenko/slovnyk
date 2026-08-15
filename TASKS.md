@@ -93,3 +93,8 @@ airplane mode persists across a reload.
 - Reverse mode (translation → term)
 - Cross-device progress sync
 - FSRS parameter optimisation from the review log
+- Surface the stored last-sync error somewhere reachable offline: `readLastSyncError`
+  (`src/lib/db.ts`) records it and nothing displays it, while `/health` re-fetches the
+  sheet server-side and deliberately stays `NetworkOnly` — so offline, the recorded
+  failure is the only evidence and no page can show it (SPEC §5.5 gap, reviewer finding
+  2026-08-15)

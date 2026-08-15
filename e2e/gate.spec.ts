@@ -17,6 +17,30 @@ test("the words API answers 401, not a login page", async ({ request }) => {
   expect(response.status()).toBe(401);
 });
 
+test("installation assets stay outside the gate", async ({ request }) => {
+  // The browser fetches these without cookies during "Add to Home Screen"; a redirect
+  // here is the difference between installable and silently uninstallable.
+  for (const path of ["/sw.js", "/manifest.webmanifest", "/icons/icon-192.png"]) {
+    const response = await request.get(`${GATE_ORIGIN}${path}`, {
+      maxRedirects: 0,
+    });
+    expect(response.status(), path).toBe(200);
+  }
+});
+
+test("no service worker registers behind the gate", async ({ page }) => {
+  await page.goto(`${GATE_ORIGIN}/gate`);
+  // Give a wrong registration every chance to happen before looking: a worker that
+  // installs here would precache the gate page as the offline app shell.
+  await page.waitForTimeout(500);
+  const registrationScope = await page.evaluate(() =>
+    navigator.serviceWorker
+      .getRegistration()
+      .then((found) => found?.scope ?? null),
+  );
+  expect(registrationScope).toBeNull();
+});
+
 test("a wrong key is refused and the door stays shut", async ({ page }) => {
   await page.goto(`${GATE_ORIGIN}/gate`);
   await page.getByLabel("Access key").fill("not-the-key");

@@ -38,11 +38,23 @@ describe("decideGate", () => {
     }
   });
 
-  it("lets a device with the digest cookie in everywhere", async () => {
+  it("renews a device with the digest cookie everywhere", async () => {
     const cookieValue = await gateCookieValue(APP_KEY);
     for (const pathname of ["/", "/list", "/settings", "/api/words"]) {
       expect(
         await decideGate({ appKey: APP_KEY, cookieValue, pathname }),
+      ).toBe("renew");
+    }
+  });
+
+  it("never renews on the open paths, where a wrong cookie also passes", async () => {
+    const cookieValue = await gateCookieValue(APP_KEY);
+    for (const pathname of ["/gate", "/api/gate"]) {
+      expect(
+        await decideGate({ appKey: APP_KEY, cookieValue, pathname }),
+      ).toBe("allow");
+      expect(
+        await decideGate({ appKey: APP_KEY, cookieValue: "wrong", pathname }),
       ).toBe("allow");
     }
   });

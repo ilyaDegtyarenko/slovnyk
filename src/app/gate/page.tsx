@@ -12,7 +12,7 @@ export default async function GatePage({ searchParams }: PageProps<"/gate">) {
     cookieValue: cookieStore.get(GATE_COOKIE_NAME)?.value,
     pathname: "/",
   });
-  if (decision === "allow") {
+  if (decision === "allow" || decision === "renew") {
     redirect("/");
   }
 

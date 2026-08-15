@@ -242,6 +242,13 @@ export function syncNotice(error: SyncError): SyncNotice {
 }
 
 const noticeByCode: Record<SyncError["code"], SyncNotice> = {
+  // The device's key cookie died — rotation, or a year away. The cached words are
+  // untouched, and the fix is the gate, not the sheet.
+  GATE_LOCKED: {
+    blocking: false,
+    title: "Sync failed — this device's access key is stale. Open /gate and enter it again.",
+    showHealthLink: false,
+  },
   OFFLINE: {
     blocking: false,
     title: "Offline — studying from the words cached on this device.",

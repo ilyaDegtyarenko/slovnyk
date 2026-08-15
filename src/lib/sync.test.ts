@@ -440,6 +440,28 @@ describe("syncFromApi", () => {
     expect(result.error.message).toContain("Publish to web");
   });
 
+  it("relays a locked instance's 401 without blaming the endpoint", async () => {
+    stubFetch(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "GATE_LOCKED",
+            message: "Open /gate and enter the key again.",
+          },
+        }),
+        { status: 401, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+    const result = await syncFromApi({ fresh: false });
+
+    if (result.ok) {
+      throw new Error("expected the relayed gate error");
+    }
+    expect(result.error.code).toBe("GATE_LOCKED");
+    expect(result.error.message).toContain("/gate");
+  });
+
   it("refuses a word list that does not match the shape it expects", async () => {
     stubFetch(
       new Response(

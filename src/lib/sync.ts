@@ -10,6 +10,7 @@ import type { InvalidRow, SheetError, Word } from "@/lib/sheet";
 
 export type SyncError =
   | SheetError
+  | { code: "GATE_LOCKED"; message: string }
   | { code: "OFFLINE"; message: string }
   | { code: "SYNC_RESPONSE_INVALID"; message: string }
   | { code: "EMPTY_SHEET"; message: string }
@@ -53,9 +54,16 @@ const WordsPayload = z.object({
   syncedAt: z.iso.datetime(),
 });
 
+// The sheet's own codes plus the one the proxy answers with before the route handler
+// ever runs — a locked instance must not read as a broken endpoint.
+const RELAYED_ERROR_CODES = {
+  ...SHEET_ERROR_CODES,
+  GATE_LOCKED: "GATE_LOCKED",
+} as const;
+
 const ErrorPayload = z.object({
   error: z.object({
-    code: z.enum(SHEET_ERROR_CODES),
+    code: z.enum(RELAYED_ERROR_CODES),
     message: z.string(),
   }),
 });

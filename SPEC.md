@@ -172,15 +172,24 @@ Composed in this order:
 - A deployed instance is reachable by anyone with the URL, so when the `APP_KEY`
   environment variable is set, every page and `/api/words` require it. This is one
   shared passphrase asked once per device — not accounts or login, which stay out of
-  scope (§2).
+  scope (§2). `/api/gate` does not throttle guesses: the key must be a long random
+  phrase, because its entropy is the only lock.
 - `/gate` is the only open page: entering the key sets a year-long HttpOnly cookie
   holding a digest of the key (never the key itself) and returns to `/`. A wrong key
-  re-asks with an error.
-- Without the cookie, pages redirect to `/gate`; `/api/*` answers `401` instead of
-  redirecting. Static assets, the manifest, icons, and `sw.js` stay open — the browser
-  fetches the manifest without cookies during install, and none of them contain a word.
-- The service worker registers only outside `/gate`, so a worker installed while the
-  gate is shut can never precache the gate page as the app shell.
+  re-asks with an error. Every allowed request re-issues the cookie, so its year
+  restarts on each visit and devices in regular use are never asked again.
+- Without the cookie, pages redirect to `/gate`; `/api/*` answers `401` with the same
+  typed error shape as the words API (`GATE_LOCKED`), which the study screen surfaces
+  as a non-blocking notice pointing at `/gate`. Static assets, the manifest, icons,
+  and `sw.js` stay open — the browser fetches the manifest without cookies during
+  install, and none of them contain a word. One consequence is accepted: anything
+  compiled into client chunks under `NEXT_PUBLIC_*` (the sheet edit link above all) is
+  readable without the key. That discloses the sheet's address, not access to it —
+  publishing to the web does not link-share the document.
+- Two layers keep the gate out of the offline shell: the service worker registers only
+  outside `/gate`, and precaching refuses redirected responses outright, so an install
+  or update attempted while the device is locked fails and the previous worker keeps
+  serving its good shell.
 - Unset `APP_KEY` disables the gate entirely; development and the test suites run open.
 - Rotating `APP_KEY` invalidates every device's cookie at once; each device re-enters
   the new key at `/gate`.

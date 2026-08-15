@@ -13,6 +13,12 @@ const LINKS = [
 export function SiteNav() {
   const pathname = usePathname();
 
+  // Four tabs that all bounce back to the gate are noise — and each one is prefetched
+  // as a request the proxy only redirects.
+  if (pathname === "/gate") {
+    return null;
+  }
+
   return (
     <nav className="sticky top-0 z-10 border-b border-black/10 bg-background/90 font-sans backdrop-blur dark:border-white/15">
       <ul className="mx-auto flex w-full max-w-3xl gap-1 px-2">
