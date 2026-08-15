@@ -372,7 +372,7 @@ export default function StudyPage() {
     // today" honest and the layout still.
     if (current === undefined && refilling) {
       return (
-        <div aria-hidden className="flex flex-1 flex-col justify-center gap-4">
+        <div aria-hidden className="flex flex-col gap-4">
           <div className="h-[clamp(320px,58dvh,520px)] rounded-3xl border border-black/5 bg-black/[0.03] dark:border-white/5 dark:bg-white/[0.03]" />
           <div className="h-20" />
         </div>
@@ -430,7 +430,7 @@ export default function StudyPage() {
 
     const intervalByRating = previewIntervals(current.card, new Date());
     return (
-      <div className="flex flex-1 flex-col justify-center gap-4">
+      <div className="flex flex-col gap-4">
         {/* The key remounts the card face down for every word, which is also what plays
             the entrance animation between cards. */}
         <section
@@ -551,17 +551,22 @@ export default function StudyPage() {
                      the keyframe's `both` fill keeps every one invisible until its
                      turn. Late arrivals are still live — a fast `3` never waits. */
                   style={{ animationDelay: `${index * 60}ms` }}
-                  className="flex h-full flex-col items-center justify-center gap-0.5 rounded-2xl border border-black/10 text-sm font-medium capitalize transition-[background-color,transform] duration-150 hover:bg-black/[.04] active:scale-[0.97] motion-safe:animate-rise-in dark:border-white/10 dark:hover:bg-white/[.06]"
+                  className="relative flex h-full flex-col items-center justify-center gap-0.5 rounded-2xl border border-black/10 text-sm font-medium capitalize transition-[background-color,transform] duration-150 hover:bg-black/[.04] active:scale-[0.97] motion-safe:animate-rise-in dark:border-white/10 dark:hover:bg-white/[.06]"
                 >
                   <span className={colorByRating[rating]}>{rating}</span>
                   {/* `normal-case` shields the interval from the button's capitalize —
                       "10 Min" is nobody's unit. */}
-                  <span className="flex items-center gap-1.5 font-mono text-[11px] normal-case text-zinc-400 dark:text-zinc-500">
+                  <span className="font-mono text-[11px] normal-case text-zinc-400 dark:text-zinc-500">
                     {intervalByRating[rating]}
-                    <kbd className={`${KEYCAP_CLASS_NAME} pointer-coarse:hidden`}>
-                      {index + 1}
-                    </kbd>
                   </span>
+                  {/* Out of the reading line, into the corner: the key is a hint about
+                      the button, not part of what the button says. Last in the DOM so
+                      the accessible name still starts with the rating. */}
+                  <kbd
+                    className={`${KEYCAP_CLASS_NAME} absolute right-2 top-2 normal-case pointer-coarse:hidden`}
+                  >
+                    {index + 1}
+                  </kbd>
                 </button>
               ))}
             </div>
@@ -588,8 +593,12 @@ export default function StudyPage() {
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
       {/* Counts on their own line, the full-width bar under them running to its label.
           Undo moved out to the bottom of the screen — a pill up here kept shouldering
-          the bar aside. */}
-      <header className="flex min-h-5 flex-col gap-2">
+          the bar aside. While a card is up, this zone and the undo footer take equal
+          shares of the free space, so the status floats centered between the nav and
+          the card and the card itself stays put. */}
+      <header
+        className={`flex min-h-5 flex-col gap-2 ${studying ? "flex-1 justify-center" : ""}`}
+      >
         <h1 className="sr-only">Study</h1>
         {/* Mounted even while it says nothing: a live region announces changes only
             if it already existed, and a refill mid-sitting is such a change. */}
@@ -713,7 +722,9 @@ export default function StudyPage() {
       session.wordCount === 0 ||
       storageError !== null ||
       blocked ? null : (
-        <footer className="flex justify-center">
+        <footer
+          className={`flex justify-center ${studying ? "flex-1 items-end" : ""}`}
+        >
           <button
             type="button"
             onClick={() => void undo()}
