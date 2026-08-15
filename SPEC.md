@@ -16,7 +16,7 @@ Explicitly out of scope — do not implement, do not scaffold for:
 
 - User accounts, login, multi-user support
 - Server-side database or cross-device sync of progress
-- Text-to-speech, images, diagrams
+- Images, diagrams
 - Typing-answer mode, multiple choice, matching games
 - Analytics, telemetry, any third-party tracking
 
@@ -122,8 +122,13 @@ Composed in this order:
 ### 5.1 `/` — Study session
 
 - One card at a time. Front: `term`. Tap / Space reveals `translation` and `example`.
+- A speaker button on the card pronounces `term` (English) through the platform's own
+  speech synthesis (Web Speech API) — no audio files, no network, works offline. The
+  button simply does not render where the API is missing.
 - After reveal: four rating buttons, with keyboard shortcuts `1`–`4`.
 - Header shows remaining counts: due / new.
+- A thin progress bar with an `answered/total` label shows how far through the current
+  queue the session is; undo takes the tick back.
 - Empty state when the queue is done: what was studied today, when the next card is due,
   and a button to study ahead.
 

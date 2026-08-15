@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import { Timestamp } from "@/components/timestamp";
 import { recordReview, undoLastReview } from "@/lib/db";
@@ -13,6 +20,7 @@ import {
   type QueueCard,
   type StudySession,
 } from "@/lib/session";
+import { pronounce, speechAvailable, stopPronunciation } from "@/lib/speech";
 import { REVIEW_RATINGS, type ReviewRating } from "@/lib/srs";
 import { syncFromApi, type SyncError } from "@/lib/sync";
 
@@ -31,16 +39,22 @@ const PILL_BUTTON_CLASS_NAME =
 const PRIMARY_BUTTON_CLASS_NAME =
   "flex h-12 items-center justify-center rounded-full bg-foreground px-6 text-base font-medium text-background transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.97] disabled:opacity-40 disabled:active:scale-100";
 
+// Color stays on the words alone; four differently colored boxes shouted louder than
+// the card they rate.
 const colorByRating: Record<ReviewRating, string> = {
-  again:
-    "border-red-500/40 text-red-600 hover:bg-red-500/10 dark:text-red-400",
-  hard: "border-amber-500/40 text-amber-600 hover:bg-amber-500/10 dark:text-amber-400",
-  good: "border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400",
-  easy: "border-sky-500/40 text-sky-600 hover:bg-sky-500/10 dark:text-sky-400",
+  again: "text-red-600 dark:text-red-400",
+  hard: "text-amber-600 dark:text-amber-400",
+  good: "text-emerald-600 dark:text-emerald-400",
+  easy: "text-sky-600 dark:text-sky-400",
 };
 
 const NOTHING_TO_UNDO =
   "Nothing to undo — that answer is no longer the last one in the log.";
+
+// Speech support never changes within a page's lifetime; the store subscribes to nothing
+// and only exists so the server render (no `window`) agrees with the first client one.
+const subscribeToNothing = () => () => {};
+const noSpeechOnTheServer = () => false;
 
 // The answer undo would roll back, held with the log row it wrote so that a second undo —
 // or a key held down — cannot reach past it into the answer before.
@@ -49,12 +63,20 @@ type Undoable = { card: QueueCard; seq: number };
 export default function StudyPage() {
   const [session, setSession] = useState<StudySession | null>(null);
   const [queue, setQueue] = useState<QueueCard[]>([]);
+  // Progress counts this sitting only: answered plus what is still in hand is the total
+  // the bar runs to. Undo gives the card back and takes the tick with it.
+  const [answeredThisSession, setAnsweredThisSession] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const [undoable, setUndoable] = useState<Undoable | null>(null);
   const [undoNotice, setUndoNotice] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<SyncError | null>(null);
   const [syncErrorSeen, setSyncErrorSeen] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
+  const speechReady = useSyncExternalStore(
+    subscribeToNothing,
+    speechAvailable,
+    noSpeechOnTheServer,
+  );
   const answering = useRef(false);
   const hasAnswered = useRef(false);
   // React has not re-rendered by the time an answer finishes, so the queue still shows the
@@ -83,6 +105,7 @@ export default function StudyPage() {
     }
 
     setQueue(loaded.queue);
+    setAnsweredThisSession(0);
     setRevealed(false);
     answeredCardId.current = null;
   }, [refresh]);
@@ -130,6 +153,7 @@ export default function StudyPage() {
         });
         hasAnswered.current = true;
         setUndoable({ card: current, seq: recorded.seq });
+        setAnsweredThisSession((answered) => answered + 1);
         setRevealed(false);
 
         const rest = queue.slice(1);
@@ -169,6 +193,7 @@ export default function StudyPage() {
       // The queue in hand is kept rather than rebuilt: a queue of cards pulled forward is
       // not the daily one, and rebuilding would throw the rest of them away.
       setQueue((current) => putInFront(current, undoable.card));
+      setAnsweredThisSession((answered) => Math.max(0, answered - 1));
       setRevealed(false);
       answeredCardId.current = null;
       // The counts and the next-due line come from the database, and the answer just
@@ -189,12 +214,18 @@ export default function StudyPage() {
     setQueue(
       session.upcoming.map((entry) => ({ word: entry.word, kind: "ahead" })),
     );
+    setAnsweredThisSession(0);
     setRevealed(false);
     // A card pulled forward may well be the one just answered, and it is fair game again.
     answeredCardId.current = null;
   }, [session]);
 
   const current = queue[0];
+
+  // A voice reading the previous word over the next card would be worse than silence.
+  const currentWordId = current?.word.id;
+  useEffect(() => stopPronunciation, [currentWordId]);
+
   const syncedAt = session?.syncState?.syncedAt;
   const notice = syncError === null ? null : syncNotice(syncError);
   const blocked = notice !== null && notice.blocking && !syncErrorSeen;
@@ -332,13 +363,35 @@ export default function StudyPage() {
       );
     }
 
+    const sessionTotal = answeredThisSession + queue.length;
     return (
       <div className="flex flex-1 flex-col justify-center gap-4">
+        <div className="flex items-center gap-3 px-1">
+          <div
+            role="progressbar"
+            aria-label="Session progress"
+            aria-valuemin={0}
+            aria-valuemax={sessionTotal}
+            aria-valuenow={answeredThisSession}
+            className="h-1 flex-1 overflow-hidden rounded-full bg-black/[.06] dark:bg-white/[.08]"
+          >
+            <div
+              className="h-full rounded-full bg-foreground motion-safe:transition-[width] motion-safe:duration-300"
+              style={{
+                width: `${sessionTotal === 0 ? 0 : (answeredThisSession / sessionTotal) * 100}%`,
+              }}
+            />
+          </div>
+          <span className="text-xs font-medium tabular-nums text-zinc-500 dark:text-zinc-400">
+            {answeredThisSession}/{sessionTotal}
+          </span>
+        </div>
+
         {/* The key remounts the card face down for every word, which is also what plays
             the entrance animation between cards. */}
         <section
           key={current.word.id}
-          className="flex h-[clamp(320px,58dvh,520px)] flex-col [perspective:1600px] motion-safe:animate-card-in"
+          className="relative flex h-[clamp(320px,58dvh,520px)] flex-col [perspective:1600px] motion-safe:animate-card-in"
         >
           {/* The face-down name carries the word itself, so a screen reader hears what it
               is being asked to recall, not just that an answer exists. */}
@@ -403,6 +456,40 @@ export default function StudyPage() {
               </span>
             </span>
           </button>
+
+          {/* A sibling of the flip button, never a child: buttons do not nest, and hearing
+              the word must not turn the card. */}
+          {speechReady ? (
+            <button
+              type="button"
+              aria-label={`Pronounce “${current.word.term}”`}
+              onClick={(event) => {
+                // A clicked button keeps focus, and the Space guard above would then
+                // feed every Space to this button instead of flipping the card. detail
+                // is 0 for keyboard activation, where the focus is the user's own.
+                if (event.detail > 0) {
+                  event.currentTarget.blur();
+                }
+                pronounce(current.word.term);
+              }}
+              className="absolute right-2.5 top-2.5 z-10 flex size-11 items-center justify-center rounded-full text-zinc-400 transition-[background-color,color,transform] duration-150 hover:bg-black/[.05] hover:text-foreground active:scale-95 dark:text-zinc-500 dark:hover:bg-white/10 dark:hover:text-foreground"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+                className="size-5"
+              >
+                <path d="M11 5.5 6.8 9H4.5a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h2.3l4.2 3.5v-13Z" />
+                <path d="M15 8.7a4.7 4.7 0 0 1 0 6.6" />
+                <path d="M17.8 6.2a8.4 8.4 0 0 1 0 11.6" />
+              </svg>
+            </button>
+          ) : null}
         </section>
 
         {/* Fixed height, so trading the hint for the rating buttons moves nothing. */}
@@ -414,10 +501,10 @@ export default function StudyPage() {
                   key={rating}
                   type="button"
                   onClick={() => void answer(rating)}
-                  className={`flex h-full flex-col items-center justify-center gap-0.5 rounded-2xl border text-sm font-medium capitalize transition-[background-color,transform] duration-150 active:scale-[0.97] ${colorByRating[rating]}`}
+                  className="flex h-full flex-col items-center justify-center gap-0.5 rounded-2xl border border-black/10 text-sm font-medium capitalize transition-[background-color,transform] duration-150 hover:bg-black/[.04] active:scale-[0.97] dark:border-white/10 dark:hover:bg-white/[.06]"
                 >
-                  {rating}
-                  <span className="font-mono text-[11px] opacity-50 pointer-coarse:hidden">
+                  <span className={colorByRating[rating]}>{rating}</span>
+                  <span className="font-mono text-[11px] text-zinc-400 pointer-coarse:hidden dark:text-zinc-500">
                     {index + 1}
                   </span>
                 </button>
@@ -452,7 +539,7 @@ export default function StudyPage() {
         ) : (
           <p
             aria-live="polite"
-            className="rounded-full border border-black/10 px-3 py-1 text-xs font-medium tabular-nums text-zinc-600 dark:border-white/10 dark:text-zinc-400"
+            className="text-sm font-medium tabular-nums text-zinc-500 dark:text-zinc-400"
           >
             {countsLabel(queue)}
           </p>
@@ -494,7 +581,7 @@ export default function StudyPage() {
           {notice.showHealthLink ? (
             <Link
               href="/health"
-              className="mt-1 inline-block underline underline-offset-4"
+              className="mt-1 inline-block underline underline-offset-4 active:opacity-60"
             >
               See what the sheet answered
             </Link>

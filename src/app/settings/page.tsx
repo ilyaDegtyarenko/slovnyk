@@ -223,7 +223,7 @@ export default function SettingsPage() {
                 void commitNewPerDay();
               }
             }}
-            className="h-11 w-24 rounded-lg border border-black/10 bg-transparent px-3 text-base dark:border-white/15"
+            className="h-11 w-24 rounded-xl border border-black/10 bg-black/[.03] px-3 text-center text-base tabular-nums dark:border-white/10 dark:bg-white/[.04]"
           />
           cards introduced on top of everything that came due, saved when you
           leave the field
@@ -252,7 +252,7 @@ export default function SettingsPage() {
           >
             {syncing ? "Refreshing…" : "Refresh from sheet"}
           </button>
-          <Link href="/health" className="text-sm underline underline-offset-4">
+          <Link href="/health" className="text-sm underline underline-offset-4 active:opacity-60">
             See rejected rows
           </Link>
         </div>
@@ -274,13 +274,18 @@ export default function SettingsPage() {
           >
             Export JSON
           </button>
-          <input
-            type="file"
-            accept="application/json,.json"
-            aria-label="Import progress from a JSON file"
-            onChange={(event) => void importProgress(event)}
-            className="max-w-full text-sm text-zinc-600 file:mr-3 file:h-11 file:cursor-pointer file:rounded-lg file:border file:border-black/10 file:bg-transparent file:px-4 file:text-sm file:font-medium file:text-foreground dark:text-zinc-400 dark:file:border-white/15"
-          />
+          {/* The input is visually hidden because the native control drags its
+              “no file chosen” chrome along; the label is the whole visible button. */}
+          <label className="ring-host flex h-11 cursor-pointer items-center rounded-lg border border-black/10 px-4 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/15 dark:hover:bg-white/[.06]">
+            Import JSON…
+            <input
+              type="file"
+              accept="application/json,.json"
+              aria-label="Import progress from a JSON file"
+              onChange={(event) => void importProgress(event)}
+              className="sr-only"
+            />
+          </label>
         </div>
         <Note outcome={transferOutcome} />
       </section>

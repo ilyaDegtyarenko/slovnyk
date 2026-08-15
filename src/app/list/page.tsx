@@ -20,11 +20,12 @@ type WordList = {
 
 const ALL_TAGS = "";
 
+// The state is a fact, not an alarm: color stays on the word, the border stays quiet.
 const chipByState: Record<WordState, string> = {
-  new: "border-zinc-500/40 text-zinc-600 dark:text-zinc-400",
-  learning: "border-amber-500/50 text-amber-700 dark:text-amber-300",
-  review: "border-emerald-500/50 text-emerald-700 dark:text-emerald-300",
-  orphaned: "border-red-500/50 text-red-700 dark:text-red-300",
+  new: "text-zinc-500 dark:text-zinc-400",
+  learning: "text-amber-600 dark:text-amber-300",
+  review: "text-emerald-600 dark:text-emerald-300",
+  orphaned: "text-red-600 dark:text-red-300",
 };
 
 // Editing happens in the sheet, so the list only points at it. An installation without the
@@ -88,7 +89,7 @@ export default function ListPage() {
             href={sheetEditUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm underline underline-offset-4"
+            className="text-sm underline underline-offset-4 active:opacity-60"
           >
             Edit in the sheet
           </a>
@@ -104,28 +105,52 @@ export default function ListPage() {
         </section>
       )}
 
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <input
-          type="search"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search term or translation"
-          aria-label="Search term or translation"
-          className="h-11 flex-1 rounded-lg border border-black/10 bg-transparent px-3 text-base dark:border-white/15"
-        />
-        <select
-          value={tag}
-          onChange={(event) => setTag(event.target.value)}
-          aria-label="Filter by tag"
-          className="h-11 rounded-lg border border-black/10 bg-background px-3 text-base dark:border-white/15"
-        >
-          <option value={ALL_TAGS}>All tags</option>
-          {tags.map((known) => (
-            <option key={known} value={known}>
-              {known}
-            </option>
-          ))}
-        </select>
+      <div className="flex flex-col gap-3">
+        <div className="relative">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            aria-hidden
+            className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-zinc-400 dark:text-zinc-500"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.2-3.2" />
+          </svg>
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search term or translation"
+            aria-label="Search term or translation"
+            className="h-11 w-full rounded-full border border-black/10 bg-black/[.03] pl-11 pr-4 text-base transition-colors placeholder:text-zinc-400 dark:border-white/10 dark:bg-white/[.04] dark:placeholder:text-zinc-500"
+          />
+        </div>
+
+        {/* Toggle chips instead of a native select: every option is one tap, and nothing
+            here looks like the platform's form chrome. */}
+        {tags.length === 0 ? null : (
+          <div
+            role="group"
+            aria-label="Filter by tag"
+            className="flex flex-wrap items-center gap-1.5"
+          >
+            <TagChip active={tag === ALL_TAGS} onSelect={() => setTag(ALL_TAGS)}>
+              All tags
+            </TagChip>
+            {tags.map((known) => (
+              <TagChip
+                key={known}
+                active={tag === known}
+                onSelect={() => setTag(known)}
+              >
+                {known}
+              </TagChip>
+            ))}
+          </div>
+        )}
       </div>
 
       {list === null ? (
@@ -141,7 +166,7 @@ export default function ListPage() {
               No words are cached on this device yet.{" "}
               <Link
                 href="/settings"
-                className="underline underline-offset-4"
+                className="underline underline-offset-4 active:opacity-60"
               >
                 Refresh from the sheet in Settings
               </Link>{" "}
@@ -160,12 +185,12 @@ export default function ListPage() {
               return (
                 <li
                   key={word.id}
-                  className="flex flex-col gap-1 rounded-lg border border-black/10 p-3 dark:border-white/15"
+                  className="flex flex-col gap-1 rounded-2xl border border-black/10 p-4 dark:border-white/10"
                 >
                   <div className="flex items-baseline justify-between gap-3">
                     <span className="font-medium">{word.term}</span>
                     <span
-                      className={`shrink-0 rounded-full border px-2 py-0.5 text-xs ${chipByState[state]}`}
+                      className={`shrink-0 rounded-full border border-black/10 px-2 py-0.5 text-xs dark:border-white/10 ${chipByState[state]}`}
                     >
                       {state}
                     </span>
@@ -206,6 +231,31 @@ export default function ListPage() {
         </>
       )}
     </main>
+  );
+}
+
+function TagChip({
+  active,
+  onSelect,
+  children,
+}: {
+  active: boolean;
+  onSelect: () => void;
+  children: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onSelect}
+      className={`flex h-11 items-center rounded-full px-4 text-sm transition-[background-color,color,transform] duration-150 active:scale-[0.97] ${
+        active
+          ? "bg-foreground font-medium text-background"
+          : "border border-black/10 text-zinc-600 hover:bg-black/[.04] dark:border-white/15 dark:text-zinc-400 dark:hover:bg-white/[.06]"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 

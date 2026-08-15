@@ -152,6 +152,22 @@ test.describe("study session", () => {
     await page.getByRole("button", { name: FIXTURE_TRANSLATIONS }).click();
     await expect(faceDownCard).toBeVisible();
     await expect(good).toBeHidden();
+
+    // Nothing answered yet, so the session progress still reads 0 of 3.
+    await expect(page.getByText("0/3")).toBeVisible();
+
+    // The speaker reads the word aloud without turning the card — and because a clicked
+    // button keeps focus, it blurs itself after a pointer click so that the next Space
+    // still flips the card (SPEC §7 full keyboard operation).
+    const speaker = page.getByRole("button", { name: /^Pronounce/ });
+    await expect(speaker).toBeVisible();
+    const speakerBox = await speaker.boundingBox();
+    expect(speakerBox?.width).toBeGreaterThanOrEqual(44);
+    expect(speakerBox?.height).toBeGreaterThanOrEqual(44);
+    await speaker.click();
+    await expect(good).toBeHidden();
+    await page.keyboard.press("Space");
+    await expect(good).toBeVisible();
   });
 
   test("the blocking sync error keeps the keyboard away from the queue", async ({

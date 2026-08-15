@@ -23,7 +23,7 @@ export function SiteNav() {
               <Link
                 href={link.href}
                 aria-current={current ? "page" : undefined}
-                className={`relative flex h-12 items-center px-3 text-sm transition-colors ${
+                className={`relative flex h-12 items-center px-3 text-sm transition-[color] active:opacity-60 ${
                   current
                     ? "font-semibold text-foreground"
                     : "text-zinc-500 hover:text-foreground dark:text-zinc-400 dark:hover:text-foreground"

@@ -91,6 +91,5 @@ airplane mode persists across a reload.
 ## Backlog — not scheduled
 
 - Reverse mode (translation → term)
-- Text-to-speech via Web Speech API
 - Cross-device progress sync
 - FSRS parameter optimisation from the review log

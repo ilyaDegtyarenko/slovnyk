@@ -50,3 +50,40 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
+
+/* Layered as `base` so Tailwind utilities keep their normal right of way: unlayered
+   rules would silently beat any later `outline-*` or `appearance-*` utility. */
+@layer base {
+  /* One focus ring for the whole app: the browser default (blue on dark surfaces)
+     fights the palette, and per-element utilities would drift apart. The outline
+     follows each element's radius. */
+  :focus-visible {
+    outline: 2px solid
+      color-mix(in oklab, var(--foreground) 55%, var(--background));
+    outline-offset: 2px;
+  }
+
+  /* The gray flash Android and iOS paint under every tap reads as jank next to the
+     app's own pressed states. */
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* A control whose real input is visually hidden (the file picker) shows the focus
+     ring on its visible shell instead. */
+  .ring-host:has(:focus-visible) {
+    outline: 2px solid
+      color-mix(in oklab, var(--foreground) 55%, var(--background));
+    outline-offset: 2px;
+  }
+
+  /* The number field keeps its numeric keyboard and validation; only the desktop
+     spinner chrome goes, which never fit a one-field settings form. */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    appearance: none;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+}
