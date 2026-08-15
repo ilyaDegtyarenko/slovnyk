@@ -580,9 +580,10 @@ export default function StudyPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
-      {/* One quiet line: counts, then the bar running to its own label. Undo moved out
-          to the bottom of the screen — a pill up here kept shouldering the bar aside. */}
-      <header className="flex min-h-5 flex-wrap items-center gap-x-4 gap-y-2">
+      {/* Counts on their own line, the full-width bar under them running to its label.
+          Undo moved out to the bottom of the screen — a pill up here kept shouldering
+          the bar aside. */}
+      <header className="flex min-h-5 flex-col gap-2">
         <h1 className="sr-only">Study</h1>
         {/* Mounted even while it says nothing: a live region announces changes only
             if it already existed, and a refill mid-sitting is such a change. */}
@@ -595,7 +596,7 @@ export default function StudyPage() {
           </p>
         )}
         {studying ? (
-          <div className="flex min-w-48 flex-1 items-center gap-3">
+          <div className="flex items-center gap-3">
             <div
               role="progressbar"
               aria-label="Session progress"
@@ -713,6 +714,19 @@ export default function StudyPage() {
             disabled={undoable === null}
             className="flex h-11 items-center gap-2 rounded-full px-5 text-sm text-zinc-500 transition-[background-color,color,transform] duration-150 hover:bg-black/[.04] hover:text-foreground active:scale-[0.97] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-zinc-500 disabled:active:scale-100 dark:text-zinc-400 dark:hover:bg-white/[.06] dark:hover:text-foreground dark:disabled:hover:text-zinc-400"
           >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+              className="size-4"
+            >
+              <path d="M8.5 13.5 4 9l4.5-4.5" />
+              <path d="M4 9h10a6 6 0 0 1 6 6v0a6 6 0 0 1-6 6h-3" />
+            </svg>
             Undo
             <span className="font-mono text-xs opacity-60 pointer-coarse:hidden">
               U

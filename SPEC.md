@@ -132,8 +132,8 @@ Composed in this order:
   one before, never all at once.
 - Header says what is left in plain words (`1 to review · 2 new`) and says nothing when
   the queue is empty.
-- A thin progress bar shares the header row with the counts, its `answered/total` label
-  sitting right at its end. A card that comes back mid-sitting (rated Again, or newly
+- A thin full-width progress bar sits in the header on its own row under the counts,
+  its `answered/total` label sitting right at its end. A card that comes back mid-sitting (rated Again, or newly
   due) grows the total rather than resetting the count; undo takes the tick back.
 - Undo is a quiet borderless button at the bottom of the screen, below the card — not in
   the header.
