@@ -50,6 +50,11 @@ const PILL_BUTTON_CLASS_NAME =
 const PRIMARY_BUTTON_CLASS_NAME =
   "flex h-12 items-center justify-center rounded-full bg-foreground px-6 text-base font-medium text-background transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.97] disabled:opacity-40 disabled:active:scale-100";
 
+// Shortcut hints drawn as keycaps: a bare digit next to an interval reads as one more
+// number, and the little key shape is what says this one is pressed, not read.
+const KEYCAP_CLASS_NAME =
+  "inline-flex h-[18px] min-w-[18px] items-center justify-center rounded border border-black/15 bg-black/[.03] px-1 font-mono text-[10px] text-zinc-500 dark:border-white/20 dark:bg-white/[.06] dark:text-zinc-400";
+
 // Color stays on the words alone; four differently colored boxes shouted louder than
 // the card they rate.
 const colorByRating: Record<ReviewRating, string> = {
@@ -551,9 +556,11 @@ export default function StudyPage() {
                   <span className={colorByRating[rating]}>{rating}</span>
                   {/* `normal-case` shields the interval from the button's capitalize —
                       "10 Min" is nobody's unit. */}
-                  <span className="font-mono text-[11px] normal-case text-zinc-400 dark:text-zinc-500">
+                  <span className="flex items-center gap-1.5 font-mono text-[11px] normal-case text-zinc-400 dark:text-zinc-500">
                     {intervalByRating[rating]}
-                    <span className="pointer-coarse:hidden"> · {index + 1}</span>
+                    <kbd className={`${KEYCAP_CLASS_NAME} pointer-coarse:hidden`}>
+                      {index + 1}
+                    </kbd>
                   </span>
                 </button>
               ))}
@@ -566,8 +573,7 @@ export default function StudyPage() {
               <span>
                 Tap the card{" "}
                 <span className="hidden pointer-fine:inline">
-                  or press{" "}
-                  <span className="font-mono text-xs opacity-70">Space</span>{" "}
+                  or press <kbd className={KEYCAP_CLASS_NAME}>Space</kbd>{" "}
                 </span>
                 to flip it
               </span>
@@ -728,9 +734,7 @@ export default function StudyPage() {
               <path d="M4 9h10a6 6 0 0 1 6 6v0a6 6 0 0 1-6 6h-3" />
             </svg>
             Undo
-            <span className="font-mono text-xs opacity-60 pointer-coarse:hidden">
-              U
-            </span>
+            <kbd className={`${KEYCAP_CLASS_NAME} pointer-coarse:hidden`}>U</kbd>
           </button>
         </footer>
       )}
