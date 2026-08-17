@@ -182,11 +182,17 @@ export async function fetchSheet(options: {
     };
   }
 
+  // `cache: 'no-store'` only skips this app's caches; Google's publish pipeline sits
+  // behind its own, keyed by URL. A parameter it has never seen usually makes it answer
+  // anew — usually, not certainly, which is why every sync is dated instead of promising
+  // freshness.
+  const requestUrl = options.fresh ? cacheBustedUrl(csvUrl) : csvUrl;
+
   let csvText: string;
   let syncedAt: string;
   try {
     const response = await fetch(
-      csvUrl,
+      requestUrl,
       options.fresh
         ? { cache: "no-store" }
         : { next: { revalidate: REVALIDATE_SECONDS } },
@@ -219,10 +225,27 @@ export async function fetchSheet(options: {
     csvText = body;
     syncedAt = syncedAtOf(response);
   } catch (cause) {
-    return { ok: false, error: unreachableError(describeCause(cause, csvUrl)) };
+    return {
+      ok: false,
+      error: unreachableError(describeCause(cause, [requestUrl, csvUrl])),
+    };
   }
 
   return { ok: true, sheet: parseSheetCsv(csvText, syncedAt) };
+}
+
+// The counter keeps two refreshes in the same millisecond from sharing a URL; the
+// timestamp keeps two server instances from sharing one.
+let freshRequestSequence = 0;
+
+function cacheBustedUrl(csvUrl: string): string {
+  freshRequestSequence += 1;
+  // Through the URL API rather than concatenation: a fragment on the configured URL
+  // would swallow an appended parameter, and a swallowed parameter is this whole
+  // measure silently not happening. `isHttpUrl` has already proven the value parses.
+  const url = new URL(csvUrl);
+  url.searchParams.set("_", `${Date.now()}-${freshRequestSequence}`);
+  return url.toString();
 }
 
 function sheetRowOfParseError(
@@ -299,15 +322,19 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
-function describeCause(cause: unknown, csvUrl: string): string {
+function describeCause(cause: unknown, secretUrls: string[]): string {
   const error = cause instanceof Error ? cause : undefined;
   // A failed fetch reports a bare "fetch failed" and keeps the reason worth reading —
   // ENOTFOUND, ECONNREFUSED — on the nested cause.
   const nested = error?.cause instanceof Error ? error.cause : undefined;
   const message = nested?.message ?? error?.message ?? String(cause);
 
-  // Some failures quote the request URL back, and that URL is the one secret this app has.
-  return message.split(csvUrl).join("the configured sheet URL");
+  // Some failures quote the request URL back, and that URL is the one secret this app
+  // has — with or without the cache-busting parameter, so the longer form goes first.
+  return secretUrls.reduce(
+    (text, secretUrl) => text.split(secretUrl).join("the configured sheet URL"),
+    message,
+  );
 }
 
 function unreachableError(detail: string): SheetError {

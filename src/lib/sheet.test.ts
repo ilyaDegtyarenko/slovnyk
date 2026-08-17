@@ -390,13 +390,71 @@ describe("fetchSheet", () => {
 
   it("bypasses every cache when asked for fresh data", async () => {
     vi.stubEnv("SHEET_CSV_URL", CSV_URL);
+    // A fresh Response per call: two fetches must not fight over one body.
+    const fetchMock = vi.fn<typeof fetch>(
+      async () => new Response(csv("wa3f19c2b81,flimsum,doorway,,,")),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchSheet({ fresh: true });
+    await fetchSheet({ fresh: true });
+
+    // `no-store` only skips this app's caches; the throwaway parameter is what asks
+    // Google's publish cache for a copy it has never answered before — a new one each
+    // time, or the second refresh would hit the copy the first one just planted.
+    const requested = fetchMock.mock.calls.map(([url, init]) => {
+      expect(init).toEqual({ cache: "no-store" });
+      const requestUrl = String(url);
+      expect(requestUrl.startsWith(`${CSV_URL}&_=`)).toBe(true);
+      return requestUrl;
+    });
+    expect(new Set(requested).size).toBe(2);
+  });
+
+  it("busts the cache with ? on a sheet url that has no query yet", async () => {
+    vi.stubEnv("SHEET_CSV_URL", "https://sheets.invalid/d/e/2PACX-test/pub");
     const fetchMock = stubFetch(
       new Response(csv("wa3f19c2b81,flimsum,doorway,,,")),
     );
 
     await fetchSheet({ fresh: true });
 
-    expect(fetchMock).toHaveBeenCalledWith(CSV_URL, { cache: "no-store" });
+    const requestUrl = String(fetchMock.mock.calls[0][0]);
+    expect(
+      requestUrl.startsWith("https://sheets.invalid/d/e/2PACX-test/pub?_="),
+    ).toBe(true);
+  });
+
+  it("puts the cache-buster in the query, not into a fragment that never travels", async () => {
+    vi.stubEnv("SHEET_CSV_URL", `${CSV_URL}#gid=0`);
+    const fetchMock = stubFetch(
+      new Response(csv("wa3f19c2b81,flimsum,doorway,,,")),
+    );
+
+    await fetchSheet({ fresh: true });
+
+    const requestUrl = String(fetchMock.mock.calls[0][0]);
+    expect(requestUrl).toContain("&_=");
+    expect(requestUrl.indexOf("&_=")).toBeLessThan(requestUrl.indexOf("#"));
+  });
+
+  it("keeps the busted url out of a fresh fetch's error message", async () => {
+    vi.stubEnv("SHEET_CSV_URL", CSV_URL);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async (url) => {
+        throw new Error(`request to ${String(url)} failed`);
+      }),
+    );
+
+    const result = await fetchSheet({ fresh: true });
+
+    if (result.ok) {
+      throw new Error("expected an unreachable error");
+    }
+    expect(result.error.code).toBe("SHEET_UNREACHABLE");
+    expect(result.error.message).not.toContain("2PACX");
+    expect(result.error.message).toContain("the configured sheet URL");
   });
 
   it("reports an html body as a sheet that is not published", async () => {

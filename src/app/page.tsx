@@ -21,7 +21,12 @@ import {
   type QueueCard,
   type StudySession,
 } from "@/lib/session";
-import { pronounce, speechAvailable, stopPronunciation } from "@/lib/speech";
+import {
+  pronounce,
+  speechAvailable,
+  stopPronunciation,
+  warmUpVoices,
+} from "@/lib/speech";
 import {
   previewIntervals,
   REVIEW_RATINGS,
@@ -261,6 +266,10 @@ export default function StudyPage() {
   // A voice reading the previous word over the next card would be worse than silence.
   const currentWordId = current?.word.id;
   useEffect(() => stopPronunciation, [currentWordId]);
+
+  // Chromium only starts loading the voice list once somebody asks for it; asking at
+  // mount means the first tap already has real voices to rank.
+  useEffect(warmUpVoices, []);
 
   const syncedAt = session?.syncState?.syncedAt;
   const notice = syncError === null ? null : syncNotice(syncError);

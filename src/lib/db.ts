@@ -179,6 +179,12 @@ export async function recordSyncFailure(failure: SyncFailure): Promise<void> {
   await db.meta.put({ key: "lastSyncError", value: failure });
 }
 
+// For the sync that succeeded without changing anything worth writing: the complaint
+// still has to go, or /health keeps reporting a failure the endpoint has outlived.
+export async function clearSyncFailure(): Promise<void> {
+  await db.meta.delete("lastSyncError");
+}
+
 export async function applySync(input: {
   words: StoredWord[];
   syncState: SyncState;

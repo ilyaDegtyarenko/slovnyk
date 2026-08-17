@@ -11,7 +11,12 @@ import {
 import { buildQueue } from "@/lib/queue";
 import { parseSheetCsv, type InvalidRow, type Word } from "@/lib/sheet";
 import { initialCard, review } from "@/lib/srs";
-import { mergeSheetWords, syncFromApi, type MergeResult } from "@/lib/sync";
+import {
+  describeSyncChanges,
+  mergeSheetWords,
+  syncFromApi,
+  type MergeResult,
+} from "@/lib/sync";
 
 const FLIMSUM = "wa3f19c2b81";
 const GORBIK = "wb7c02d4e19";
@@ -75,17 +80,19 @@ function stubFailingFetch() {
   return fetchMock;
 }
 
-// What the route handler really answers, serialized the way it reaches the browser.
-function stubSheetResponse(rows: string[]) {
+function sheetResponse(rows: string[], syncedAt: string): Response {
   const sheet = parseSheetCsv(
     ["id,term,translation,example,tags,added", ...rows].join("\n"),
-    SYNCED_AT,
+    syncedAt,
   );
-  return stubFetch(
-    new Response(JSON.stringify(sheet), {
-      headers: { "content-type": "application/json" },
-    }),
-  );
+  return new Response(JSON.stringify(sheet), {
+    headers: { "content-type": "application/json" },
+  });
+}
+
+// What the route handler really answers, serialized the way it reaches the browser.
+function stubSheetResponse(rows: string[], syncedAt: string = SYNCED_AT) {
+  return stubFetch(sheetResponse(rows, syncedAt));
 }
 
 beforeEach(async () => {
@@ -249,6 +256,61 @@ describe("mergeSheetWords", () => {
     expect(merged.words[2].updatedAt).toBe(NOW.toISOString());
   });
 
+  it("counts new, changed, and removed words for the refresh report", () => {
+    const cached = [
+      cachedWord(FLIMSUM, "flimsum", 0),
+      cachedWord(GORBIK, "gorbik", 1),
+    ];
+
+    const merged = merge(cached, [
+      sheetWord(FLIMSUM, "flimsum", { translation: "gateway" }),
+      sheetWord(TRELLUP, "trellup"),
+    ]);
+
+    if (!merged.ok) {
+      throw new Error(`expected a merged list, got ${merged.error.code}`);
+    }
+    expect(merged.changes).toEqual({ added: 1, updated: 1, removed: 1 });
+  });
+
+  it("reports an untouched sheet as no changes at all", () => {
+    const cached = [cachedWord(FLIMSUM, "flimsum", 0)];
+
+    const merged = merge(cached, [sheetWord(FLIMSUM, "flimsum")]);
+
+    if (!merged.ok) {
+      throw new Error(`expected a merged list, got ${merged.error.code}`);
+    }
+    expect(merged.changes).toEqual({ added: 0, updated: 0, removed: 0 });
+  });
+
+  it("does not report a word that was already orphaned as removed again", () => {
+    const cached = [
+      cachedWord(FLIMSUM, "flimsum", 0),
+      cachedWord(GORBIK, "gorbik", 1, { orphaned: true }),
+    ];
+
+    const merged = merge(cached, [sheetWord(FLIMSUM, "flimsum")]);
+
+    if (!merged.ok) {
+      throw new Error(`expected a merged list, got ${merged.error.code}`);
+    }
+    expect(merged.changes).toEqual({ added: 0, updated: 0, removed: 0 });
+  });
+
+  it("reports a word back from orphanhood as a change", () => {
+    const cached = [
+      cachedWord(GORBIK, "gorbik", 1, { orphaned: true }),
+    ];
+
+    const merged = merge(cached, [sheetWord(GORBIK, "gorbik")]);
+
+    if (!merged.ok) {
+      throw new Error(`expected a merged list, got ${merged.error.code}`);
+    }
+    expect(merged.changes).toEqual({ added: 0, updated: 1, removed: 0 });
+  });
+
   it("follows a word moved up the sheet without calling it edited", () => {
     const cached = [
       cachedWord(FLIMSUM, "flimsum", 0),
@@ -268,6 +330,24 @@ describe("mergeSheetWords", () => {
       [FLIMSUM, 1],
     ]);
     expect(merged.words.every((word) => word.updatedAt === SYNCED_AT)).toBe(true);
+  });
+});
+
+describe("describeSyncChanges", () => {
+  it("names only the counts that moved, in a fixed order", () => {
+    expect(describeSyncChanges({ added: 2, updated: 0, removed: 1 })).toBe(
+      "2 new, 1 removed",
+    );
+    expect(describeSyncChanges({ added: 0, updated: 3, removed: 0 })).toBe(
+      "3 changed",
+    );
+    expect(describeSyncChanges({ added: 1, updated: 1, removed: 1 })).toBe(
+      "1 new, 1 changed, 1 removed",
+    );
+  });
+
+  it("returns null when nothing moved, so the caller must say so in words", () => {
+    expect(describeSyncChanges({ added: 0, updated: 0, removed: 0 })).toBeNull();
   });
 });
 
@@ -408,14 +488,167 @@ describe("syncFromApi", () => {
     expect(result.error.message).toContain("Failed to fetch");
   });
 
+  it("discards a response older than the applied sync instead of orphaning by it", async () => {
+    const NEWER_SYNCED_AT = "2026-03-05T08:00:00.000Z";
+    stubSheetResponse(
+      ["wa3f19c2b81,flimsum,doorway,,,", "wb7c02d4e19,gorbik,to wander,,,"],
+      NEWER_SYNCED_AT,
+    );
+    await syncFromApi({ fresh: false });
+
+    // A failed attempt in between: the discarded refresh below still proves the
+    // endpoint works, so it has to retire this complaint.
+    stubFailingFetch();
+    await syncFromApi({ fresh: false });
+    expect(await readLastSyncError()).toBeDefined();
+
+    // A refresh answered from Google's publish cache: an older snapshot from before
+    // gorbik existed. Applying it would orphan a word that is still in the sheet.
+    stubSheetResponse(["wa3f19c2b81,flimsum,doorway,,,"], SYNCED_AT);
+    const result = await syncFromApi({ fresh: true });
+
+    if (!result.ok) {
+      throw new Error(`expected a discarded stale sync, got ${result.error.code}`);
+    }
+    expect(result.changes).toEqual({ added: 0, updated: 0, removed: 0 });
+    expect(result.syncState.syncedAt).toBe(NEWER_SYNCED_AT);
+    expect((await db.words.get(GORBIK))?.orphaned).toBe(false);
+    expect((await readSyncState())?.syncedAt).toBe(NEWER_SYNCED_AT);
+    expect(await readLastSyncError()).toBeUndefined();
+  });
+
+  it("joins a sync already in flight instead of sending a second request", async () => {
+    let answer: (response: Response) => void = () => {};
+    const fetchMock = vi.fn<typeof fetch>(
+      () =>
+        new Promise<Response>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const first = syncFromApi({ fresh: false });
+    const second = syncFromApi({ fresh: false });
+    answer(sheetResponse(["wa3f19c2b81,flimsum,doorway,,,"], SYNCED_AT));
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // Joined, not raced: the second caller gets the very result the first one got.
+    expect(secondResult).toBe(firstResult);
+    // The mount-time background sync is exactly the request that once wedged the lane,
+    // so the deadline has to ride the non-fresh shape too — not only the refresh one.
+    expect(fetchMock.mock.calls[0][1]?.signal).toBeInstanceOf(AbortSignal);
+
+    // The lane is free again afterwards — the next sync makes its own request.
+    const nextFetchMock = stubSheetResponse(["wa3f19c2b81,flimsum,doorway,,,"]);
+    await syncFromApi({ fresh: false });
+    expect(nextFetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets a background sync join a refresh already in flight", async () => {
+    let answer: (response: Response) => void = () => {};
+    const fetchMock = vi.fn<typeof fetch>(
+      () =>
+        new Promise<Response>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const refresh = syncFromApi({ fresh: true });
+    const background = syncFromApi({ fresh: false });
+    answer(sheetResponse(["wa3f19c2b81,flimsum,doorway,,,"], SYNCED_AT));
+
+    const [refreshResult, backgroundResult] = await Promise.all([
+      refresh,
+      background,
+    ]);
+
+    // A fresher answer than the background sync asked for is still an answer to it.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toBe("/api/words?fresh=1");
+    expect(backgroundResult).toBe(refreshResult);
+  });
+
+  it("reports a timed-out request as offline and frees the lane", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async () => {
+        // What an expired AbortSignal.timeout throws out of fetch.
+        throw new DOMException("The operation timed out", "TimeoutError");
+      }),
+    );
+
+    const result = await syncFromApi({ fresh: false });
+
+    if (result.ok) {
+      throw new Error("expected a timeout to read as offline");
+    }
+    expect(result.error.code).toBe("OFFLINE");
+
+    // The wedge fix's whole point: the next attempt starts clean instead of joining
+    // the dead one.
+    const nextFetchMock = stubSheetResponse(["wa3f19c2b81,flimsum,doorway,,,"]);
+    const retried = await syncFromApi({ fresh: false });
+    expect(retried.ok).toBe(true);
+    expect(nextFetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("queues a manual refresh behind a cached sync instead of downgrading it", async () => {
+    const pending: Array<(response: Response) => void> = [];
+    const fetchMock = vi.fn<typeof fetch>(
+      () =>
+        new Promise<Response>((resolve) => {
+          pending.push(resolve);
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const background = syncFromApi({ fresh: false });
+    const refresh = syncFromApi({ fresh: true });
+
+    // Serialised, not raced: while the background sync runs, the refresh has not fired.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toBe("/api/words");
+
+    // Not merely in this tick: with the first request still unanswered a whole task
+    // later, the refresh is still holding back.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    pending[0](sheetResponse(["wa3f19c2b81,flimsum,doorway,,,"], SYNCED_AT));
+    await background;
+
+    // Joining the cached sync would have answered the refresh with the very response
+    // the user pressed the button to get past; it makes its own fresh request instead.
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(String(fetchMock.mock.calls[1][0])).toBe("/api/words?fresh=1");
+
+    const REFRESHED_SYNCED_AT = "2026-03-02T08:00:00.000Z";
+    pending[1](
+      sheetResponse(["wa3f19c2b81,flimsum,gateway,,,"], REFRESHED_SYNCED_AT),
+    );
+    const result = await refresh;
+
+    if (!result.ok) {
+      throw new Error(`expected the queued refresh to apply, got ${result.error.code}`);
+    }
+    expect(result.changes).toEqual({ added: 0, updated: 1, removed: 0 });
+    expect((await readSyncState())?.syncedAt).toBe(REFRESHED_SYNCED_AT);
+  });
+
   it("asks for a fresh list past every cache when the user refreshes", async () => {
     const fetchMock = stubFailingFetch();
 
     await syncFromApi({ fresh: true });
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/words?fresh=1", {
-      cache: "no-store",
-    });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/words?fresh=1");
+    expect(init?.cache).toBe("no-store");
+    // The deadline is what frees the sync lane when a request never answers — without
+    // it, one hung fetch would leave every later sync joined to it forever.
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
   });
 
   it("relays the typed error of a sheet that is not published", async () => {

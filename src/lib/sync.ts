@@ -1,6 +1,8 @@
 import { z } from "zod";
 import {
   applySync,
+  clearSyncFailure,
+  readSyncState,
   readWords,
   recordSyncFailure,
   type StoredWord,
@@ -16,13 +18,35 @@ export type SyncError =
   | { code: "EMPTY_SHEET"; message: string }
   | { code: "STORAGE_UNAVAILABLE"; message: string };
 
+// What a sync did to the list, counted for the person who pressed Refresh: a sync that
+// reports nothing at all is indistinguishable from one that never ran.
+export type SyncChanges = {
+  added: number;
+  updated: number;
+  removed: number;
+};
+
 export type MergeResult =
-  | { ok: true; words: StoredWord[] }
+  | { ok: true; words: StoredWord[]; changes: SyncChanges }
   | { ok: false; error: SyncError };
 
 export type SyncResult =
-  | { ok: true; words: StoredWord[]; syncState: SyncState }
+  | { ok: true; words: StoredWord[]; syncState: SyncState; changes: SyncChanges }
   | { ok: false; error: SyncError };
+
+const NO_CHANGES: SyncChanges = { added: 0, updated: 0, removed: 0 };
+
+// Null rather than an empty string when nothing moved: "no changes" needs a different
+// sentence than a list of counts, and the caller has to be forced to write it.
+export function describeSyncChanges(changes: SyncChanges): string | null {
+  const parts = [
+    changes.added > 0 ? `${changes.added} new` : null,
+    changes.updated > 0 ? `${changes.updated} changed` : null,
+    changes.removed > 0 ? `${changes.removed} removed` : null,
+  ].filter((part): part is string => part !== null);
+
+  return parts.length === 0 ? null : parts.join(", ");
+}
 
 const WORDS_ENDPOINT = "/api/words";
 
@@ -90,41 +114,98 @@ export function mergeSheetWords(input: {
   const cachedById = new Map(cached.map((word) => [word.id, word]));
   const changedAt = now.toISOString();
 
+  let added = 0;
+  let updated = 0;
+
   // Matching by id and nothing else is what lets the tutor rewrite a term without the
   // scheduler noticing: this merge writes words only, and progress is keyed by the same id.
   const words = fetched.map((word, order) => {
     const cachedWord = cachedById.get(word.id);
+    const isNew = cachedWord === undefined;
+    const edited = !isNew && hasTextChanged(cachedWord, word);
+    if (isNew) {
+      added += 1;
+    } else if (edited || cachedWord.orphaned) {
+      // A word back from orphanhood changed the studyable list even when its text did
+      // not, so the refresh report counts it too.
+      updated += 1;
+    }
+
     return {
       ...word,
       order,
       orphaned: false,
-      updatedAt:
-        cachedWord === undefined || hasTextChanged(cachedWord, word)
-          ? changedAt
-          : cachedWord.updatedAt,
+      updatedAt: isNew || edited ? changedAt : cachedWord.updatedAt,
     };
   });
 
   const fetchedIds = new Set(fetched.map((word) => word.id));
-  const orphaned = cached
-    .filter((word) => !fetchedIds.has(word.id))
-    // Their sheet position is meaningless now, but keeping it means a word that reappears
-    // in the same place comes back unchanged.
-    .map((word) => ({ ...word, orphaned: true }));
+  const missing = cached.filter((word) => !fetchedIds.has(word.id));
+  // Only a word losing its place counts as removed; one that was already orphaned is old
+  // news and must not be reported again on every sync.
+  const removed = missing.filter((word) => !word.orphaned).length;
+  // Their sheet position is meaningless now, but keeping it means a word that reappears
+  // in the same place comes back unchanged.
+  const orphaned = missing.map((word) => ({ ...word, orphaned: true }));
 
-  return { ok: true, words: [...words, ...orphaned] };
+  return {
+    ok: true,
+    words: [...words, ...orphaned],
+    changes: { added, updated, removed },
+  };
 }
+
+type PendingSync = { fresh: boolean; result: Promise<SyncResult> };
+
+// One sync at a time — per tab: module state cannot see another window, so a second tab
+// still syncs on its own, protected only by the syncedAt discard below. Two interleaved
+// syncs would each read the cached words before the other writes, and the loser's orphan
+// pass would then judge the sheet against a list its payload no longer describes.
+let pendingSync: PendingSync | null = null;
 
 export async function syncFromApi(options: {
   fresh: boolean;
 }): Promise<SyncResult> {
-  const result = await runSync(options);
+  const running = pendingSync;
 
-  if (!result.ok) {
-    await rememberFailure(result.error);
+  // Joining is only honest when the running sync asks upstream at least as hard as this
+  // call would have: a manual refresh joining a cached background sync would silently
+  // become the very answer the user pressed the button to get past. Such a refresh waits
+  // its turn instead — still one sync at a time, never two requests in flight.
+  if (running !== null && (running.fresh || !options.fresh)) {
+    return running.result;
   }
 
-  return result;
+  const result = (async () => {
+    // Awaited only when a sync is actually running: an unconditional await would push
+    // even an uncontended sync onto a later microtask, and its request with it.
+    if (running !== null) {
+      await running.result.then(
+        () => undefined,
+        () => undefined,
+      );
+    }
+
+    const outcome = await runSync(options);
+    if (!outcome.ok) {
+      await rememberFailure(outcome.error);
+    }
+    return outcome;
+  })();
+
+  const sync: PendingSync = {
+    fresh: options.fresh,
+    result: result.finally(() => {
+      // A queued refresh may have replaced this entry already; its lane is not ours to
+      // clear.
+      if (pendingSync === sync) {
+        pendingSync = null;
+      }
+    }),
+  };
+
+  pendingSync = sync;
+  return sync.result;
 }
 
 async function runSync(options: { fresh: boolean }): Promise<SyncResult> {
@@ -134,10 +215,27 @@ async function runSync(options: { fresh: boolean }): Promise<SyncResult> {
   }
 
   let cached: StoredWord[];
+  let lastApplied: SyncState | undefined;
   try {
-    cached = await readWords();
+    [cached, lastApplied] = await Promise.all([readWords(), readSyncState()]);
   } catch (cause) {
     return { ok: false, error: storageUnavailableError(cause) };
+  }
+
+  // `?fresh=1` dodges this app's caches but not Google's, so a refresh can still answer
+  // with a snapshot older than one already applied. Applying it would orphan every word
+  // the newer snapshot added, so a stale answer is discarded as no news instead. A stale
+  // answer still proves the endpoint works, which settles any standing complaint.
+  if (
+    lastApplied !== undefined &&
+    Date.parse(fetched.payload.syncedAt) < Date.parse(lastApplied.syncedAt)
+  ) {
+    try {
+      await clearSyncFailure();
+    } catch {
+      // The discard already keeps everything; losing the cleanup must not fail it.
+    }
+    return { ok: true, words: cached, syncState: lastApplied, changes: NO_CHANGES };
   }
 
   const merged = mergeSheetWords({
@@ -161,17 +259,26 @@ async function runSync(options: { fresh: boolean }): Promise<SyncResult> {
     return { ok: false, error: storageUnavailableError(cause) };
   }
 
-  return { ok: true, words: merged.words, syncState };
+  return { ok: true, words: merged.words, syncState, changes: merged.changes };
 }
+
+// Later syncs join the request in flight, so one that never settles would leave the tab
+// unable to sync until it is killed. The deadline lands on the offline path, and the
+// next attempt starts clean.
+const REQUEST_TIMEOUT_MS = 30_000;
 
 async function fetchWords(options: { fresh: boolean }): Promise<FetchedWords> {
   const url = options.fresh ? `${WORDS_ENDPOINT}?fresh=1` : WORDS_ENDPOINT;
+  const deadline = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
 
   let response: Response;
   try {
-    // The route handler owns the upstream cache; a manual refresh must not be answered
-    // from the browser's cache either.
-    response = await fetch(url, options.fresh ? { cache: "no-store" } : {});
+    response = await fetch(url, {
+      // The route handler owns the upstream cache; a manual refresh must not be answered
+      // from the browser's cache either.
+      ...(options.fresh ? ({ cache: "no-store" } as const) : {}),
+      signal: deadline,
+    });
   } catch (cause) {
     return { ok: false, error: offlineError(cause) };
   }
@@ -179,7 +286,13 @@ async function fetchWords(options: { fresh: boolean }): Promise<FetchedWords> {
   let body: unknown;
   try {
     body = await response.json();
-  } catch {
+  } catch (cause) {
+    // The deadline stays armed through the body read, so a network that stalled after
+    // the headers trips here. That is the same dead connection as one that stalled
+    // before them — not the endpoint answering garbage.
+    if (deadline.aborted) {
+      return { ok: false, error: offlineError(cause) };
+    }
     return {
       ok: false,
       error: {

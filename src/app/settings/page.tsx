@@ -1,8 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ChangeEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type ChangeEvent,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
-import { Timestamp } from "@/components/timestamp";
+import { RelativeTimestamp, Timestamp } from "@/components/timestamp";
 import {
   db,
   readNewPerDay,
@@ -12,7 +18,11 @@ import {
   type SyncState,
 } from "@/lib/db";
 import { DEFAULT_NEW_PER_DAY } from "@/lib/session";
-import { syncFromApi } from "@/lib/sync";
+import {
+  describeSyncChanges,
+  syncFromApi,
+  type SyncChanges,
+} from "@/lib/sync";
 import { importSnapshot, readSnapshot } from "@/lib/transfer";
 
 type SettingsData = {
@@ -22,7 +32,7 @@ type SettingsData = {
   syncState: SyncState | undefined;
 };
 
-type Outcome = { ok: boolean; message: string };
+type Outcome = { ok: boolean; message: ReactNode };
 
 const SECTION_CLASS_NAME =
   "flex flex-col gap-3 rounded-lg border border-black/10 p-4 dark:border-white/15";
@@ -102,14 +112,14 @@ export default function SettingsPage() {
   const refreshFromSheet = async (): Promise<void> => {
     setSyncing(true);
     setSyncOutcome(null);
+    // The moment "no changes since" can honestly point at: the last sync that was
+    // already applied when this refresh started.
+    const lastSyncedAt = data?.syncState?.syncedAt;
 
     const result = await syncFromApi({ fresh: true });
     setSyncOutcome(
       result.ok
-        ? {
-            ok: true,
-            message: `Synced ${result.words.filter((word) => !word.orphaned).length} words, ${result.syncState.invalid.length} rows rejected.`,
-          }
+        ? refreshOutcome(result.changes, lastSyncedAt)
         : { ok: false, message: `${result.error.code}: ${result.error.message}` },
     );
 
@@ -238,8 +248,11 @@ export default function SettingsPage() {
             "This device has never synced with the sheet."
           ) : (
             <>
-              Last synced <Timestamp iso={syncState.syncedAt} />,{" "}
-              {syncState.invalid.length} rows rejected.
+              {/* The age answers "is this stale?"; the absolute moment stays beside it
+                  because a tooltip is out of reach on the phone this runs on. */}
+              Last synced <RelativeTimestamp iso={syncState.syncedAt} /> (
+              <Timestamp iso={syncState.syncedAt} />), {syncState.invalid.length}{" "}
+              rows rejected.
             </>
           )}
         </p>
@@ -248,9 +261,28 @@ export default function SettingsPage() {
             type="button"
             onClick={() => void refreshFromSheet()}
             disabled={syncing}
-            className="h-11 rounded-lg bg-foreground px-4 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="flex h-11 items-center gap-2 rounded-lg bg-foreground px-4 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
           >
-            {syncing ? "Refreshing…" : "Refresh from sheet"}
+            {syncing ? (
+              <>
+                {/* The spinner carries the wait for eyes that skip the label; the label
+                    carries it for reduced motion, where the spinner stands still. */}
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  aria-hidden
+                  className="size-4 motion-safe:animate-spin"
+                >
+                  <path d="M12 3a9 9 0 1 0 9 9" />
+                </svg>
+                Refreshing…
+              </>
+            ) : (
+              "Refresh from sheet"
+            )}
           </button>
           <Link href="/health" className="text-sm underline underline-offset-4 active:opacity-60">
             See rejected rows
@@ -321,6 +353,36 @@ function Note({ outcome }: { outcome: Outcome | null }) {
       {outcome.message}
     </p>
   );
+}
+
+function refreshOutcome(
+  changes: SyncChanges,
+  sinceIso: string | undefined,
+): Outcome {
+  const summary = describeSyncChanges(changes);
+  if (summary !== null) {
+    return { ok: true, message: `Updated — ${summary}.` };
+  }
+
+  // "No changes" after an edit made moments ago is the expected outcome, not a fault:
+  // saying why keeps the tutor from concluding the refresh button is broken. The
+  // "since" clause only appears when there is an earlier sync to honestly point at —
+  // this refresh's own moment would make the sentence circular.
+  return {
+    ok: true,
+    message: (
+      <>
+        No changes
+        {sinceIso === undefined ? null : (
+          <>
+            {" "}
+            since <Timestamp iso={sinceIso} />
+          </>
+        )}
+        . Google can take a few minutes to republish sheet edits.
+      </>
+    ),
+  };
 }
 
 function describe(cause: unknown): string {
