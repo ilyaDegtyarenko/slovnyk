@@ -22,11 +22,13 @@ import {
   type StudySession,
 } from "@/lib/session";
 import {
+  prefetchPronunciations,
+  preparePronunciation,
   pronounce,
-  speechAvailable,
+  pronunciationAvailable,
   stopPronunciation,
-  warmUpVoices,
-} from "@/lib/speech";
+} from "@/lib/pronunciation";
+import { warmUpVoices } from "@/lib/speech";
 import {
   previewIntervals,
   REVIEW_RATINGS,
@@ -72,10 +74,11 @@ const colorByRating: Record<ReviewRating, string> = {
 const NOTHING_TO_UNDO =
   "Nothing to undo — that answer is no longer the last one in the log.";
 
-// Speech support never changes within a page's lifetime; the store subscribes to nothing
-// and only exists so the server render (no `window`) agrees with the first client one.
+// Pronunciation support never changes within a page's lifetime; the store subscribes to
+// nothing and only exists so the server render (no `window`) agrees with the first client
+// one.
 const subscribeToNothing = () => () => {};
-const noSpeechOnTheServer = () => false;
+const noPronunciationOnTheServer = () => false;
 
 // The answer undo would roll back, held with the log row it wrote so that a second undo —
 // or a key held down — cannot reach past it into the answer before.
@@ -96,10 +99,10 @@ export default function StudyPage() {
   const [syncError, setSyncError] = useState<SyncError | null>(null);
   const [syncErrorSeen, setSyncErrorSeen] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
-  const speechReady = useSyncExternalStore(
+  const pronunciationReady = useSyncExternalStore(
     subscribeToNothing,
-    speechAvailable,
-    noSpeechOnTheServer,
+    pronunciationAvailable,
+    noPronunciationOnTheServer,
   );
   const answering = useRef(false);
   const hasAnswered = useRef(false);
@@ -147,6 +150,11 @@ export default function StudyPage() {
       }
 
       setSyncError(null);
+      // Every word gets its recording onto the device while the network is here, so the
+      // speaker still plays one in airplane mode.
+      void prefetchPronunciations(
+        synced.words.filter((word) => !word.orphaned).map((word) => word.term),
+      );
       // Rebuilding under a session already in progress would shuffle the cards out from
       // under the user; the next queue picks the edits up anyway.
       if (!hasAnswered.current) {
@@ -266,6 +274,15 @@ export default function StudyPage() {
   // A voice reading the previous word over the next card would be worse than silence.
   const currentWordId = current?.word.id;
   useEffect(() => stopPronunciation, [currentWordId]);
+
+  // The card's recording is read into memory before any tap, because iOS only lets a tap
+  // start playback synchronously.
+  const currentTerm = current?.word.term;
+  useEffect(
+    () =>
+      currentTerm === undefined ? undefined : preparePronunciation(currentTerm),
+    [currentTerm],
+  );
 
   // Chromium only starts loading the voice list once somebody asks for it; asking at
   // mount means the first tap already has real voices to rank.
@@ -520,7 +537,7 @@ export default function StudyPage() {
                 only the face-up copy is offered to the ear or the Tab key. The back one
                 sits inside a full-size counter-rotated layer, whose rotation cancels the
                 card's and puts it — unmirrored — in the same corner. */}
-            {speechReady ? (
+            {pronunciationReady ? (
               <>
                 <PronounceButton
                   term={current.word.term}

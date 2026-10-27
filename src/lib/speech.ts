@@ -1,9 +1,9 @@
-// Pronunciation goes through the platform's own speech synthesis: no audio files, no
-// network, and on the phone it is the same voice engine the OS uses everywhere else,
-// so it keeps working offline. Only local voices are ever selected — remote ones (Edge
-// "Online (Natural)", Chrome's "Google US English") would go silent offline, and a
-// platform with no local English at all is left to the engine default, which is what
-// served before ranking existed.
+// The fallback voice: the platform's own speech synthesis, for a term whose recording is
+// not on the device yet (see pronunciation.ts). It needs no network, which is what a
+// fallback for an offline device has to offer. Only local voices are ever selected —
+// remote ones (Edge "Online (Natural)", Chrome's "Google US English") would go silent
+// offline, and a platform with no local English at all is left to the engine default,
+// which is what served before ranking existed.
 
 // The vocabulary is English; the voice must not follow the UI or system locale.
 const TERM_LANGUAGE = "en-US";

@@ -57,6 +57,13 @@ const serwist = new Serwist({
         sameOrigin && ALWAYS_FRESH_PATHS.has(url.pathname),
       handler: new NetworkOnly(),
     },
+    {
+      // The page keeps pronunciations itself, in a cache keyed by voice; a second copy in
+      // the catch-all API cache would only take up room.
+      matcher: ({ sameOrigin, url }) =>
+        sameOrigin && url.pathname === "/api/pronounce",
+      handler: new NetworkOnly(),
+    },
     ...defaultCache,
   ],
   fallbacks: {

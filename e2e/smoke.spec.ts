@@ -186,6 +186,15 @@ test.describe("study session", () => {
     // still flips the card (SPEC §7 full keyboard operation).
     const speaker = page.getByRole("button", { name: /^Pronounce/ });
     await expect(speaker).toBeVisible();
+    // The card is visible before it has finished turning back, and mid-turn the button is
+    // foreshortened below its real size.
+    await cardSection.evaluate(async (section) => {
+      await Promise.all(
+        section
+          .getAnimations({ subtree: true })
+          .map((animation) => animation.finished),
+      );
+    });
     const speakerBox = await speaker.boundingBox();
     expect(speakerBox?.width).toBeGreaterThanOrEqual(44);
     expect(speakerBox?.height).toBeGreaterThanOrEqual(44);

@@ -124,9 +124,22 @@ Composed in this order:
 
 - One card at a time. Front: `term`. Tap / Space flips the card over to `translation`
   and `example`, and flips it back again.
-- A speaker button on each face of the card pronounces `term` (English) through the
-  platform's own speech synthesis (Web Speech API) — no audio files, no network, works
-  offline. The button simply does not render where the API is missing.
+- A speaker button on each face of the card pronounces `term` (English) from a recorded
+  MP3: `/api/pronounce` synthesizes it once with Google Cloud Text-to-Speech (one fixed
+  neural voice, `GOOGLE_TTS_API_KEY` on the server) and the device keeps the file. The
+  platform's speech synthesis (Web Speech API) is not the primary path because iOS mutes
+  it in Silent Mode, while an `<audio>` element plays regardless.
+  - Each time the study screen syncs, the device downloads the files it lacks and drops
+    the ones no current term uses, so pronunciation works offline. The pass stops early
+    when the server cannot produce files (key unset, access locked, offline, or three
+    failures in a row); the next visit resumes it.
+  - The route pronounces only terms present in the sheet, never arbitrary text, and sits
+    behind the access key like every other `/api` route. It keeps each synthesized term
+    in Next's data cache, keyed by voice and term, so repeat requests do not reach Google
+    until that entry is evicted or a deploy starts the cache afresh.
+  - A term without a file on the device (offline before its download, or the key unset)
+    falls back to the platform's speech synthesis. The button does not render where
+    neither audio nor speech synthesis exists.
 - After reveal: four rating buttons, with keyboard shortcuts `1`–`4`. Each button shows
   the interval that answer would schedule (`10 min`, `3 d`), computed by ts-fsrs, so the
   four choices explain themselves. The buttons enter as a chain — each a beat after the
@@ -199,6 +212,9 @@ Composed in this order:
 - Installable: manifest with name, short name, icons (192/512, maskable), standalone
   display, theme color.
 - Serwist service worker. App shell and last-synced data available offline.
+- Pronunciation files live in their own Cache Storage cache (`slovnyk-pronunciations`),
+  filled by the page, keyed by voice and term; the service worker leaves
+  `/api/pronounce` to the network.
 - A study session completed offline must persist and must not be lost on reload.
 
 ## 7. UX rules

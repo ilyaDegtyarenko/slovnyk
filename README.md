@@ -44,10 +44,20 @@ worker in DevTools → Application → Service workers.
 | `SHEET_CSV_URL`           | yes      | Full published-to-web CSV URL (`/d/e/2PACX-.../pub?...&output=csv`) |
 | `NEXT_PUBLIC_SHEET_EDIT_URL` | no    | Normal sheet URL, used for the "edit in the sheet" link in the UI |
 | `NEXT_PUBLIC_NEW_PER_DAY` | no       | New-card intake per day, defaults to `10`                        |
+| `GOOGLE_TTS_API_KEY`      | no       | Google Cloud API key restricted to the Cloud Text-to-Speech API (SPEC §5.1). When set, each term is recorded once in a natural neural voice and kept on the device, so the speaker plays even in iOS Silent Mode and offline. Unset = the speaker uses the device's own speech synthesis, which iOS mutes in Silent Mode. |
 | `APP_KEY`                 | no       | Shared access key for a deployed instance (SPEC §5.6). When set, every page and the words API ask for it once per device at `/gate`. Use a long random phrase — its entropy is the only thing limiting guesses. Rotating it logs every device out at once. Unset = the app is open, which is how dev and the test suites run. |
 
 `SHEET_CSV_URL` is taken verbatim from `File → Publish to web → sheet: Words → CSV`.
 It is not derivable from the spreadsheet id — see `docs/sheet-setup.md`.
+
+`GOOGLE_TTS_API_KEY` setup, once: create a Google Cloud project with billing enabled,
+enable the Cloud Text-to-Speech API, create an API key under APIs & Services →
+Credentials and restrict it to that API (no application restriction — Vercel has no fixed
+IP). The route only ever sends terms that are in the sheet, and keeps each recording in
+Next's data cache once synthesized, so usage stays at roughly the vocabulary's character
+count per voice however many devices ask (plus an occasional re-recording after a cache
+eviction or a deploy) — far inside the monthly free tier. Google
+budgets only alert, they do not cap spending; a $1 budget alert is a cheap early warning.
 
 ## Google Sheet contract
 
