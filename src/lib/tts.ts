@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { googleErrorDetail } from "@/lib/google-error";
 import type { SheetFetchResult, SheetError } from "@/lib/sheet";
 
 // Server side of pronunciation: Google Cloud Text-to-Speech turns a term into an MP3, and
@@ -31,13 +32,6 @@ export type TermLookup =
   | { ok: false; error: PronunciationError };
 
 const SynthesizeResponse = z.object({ audioContent: z.string().min(1) });
-
-const GoogleErrorResponse = z.object({
-  error: z.object({
-    status: z.string().optional(),
-    message: z.string().optional(),
-  }),
-});
 
 // Long enough for any phrase a card can hold, short enough that one request cannot carry
 // a paragraph. Google's own ceiling is 5,000 bytes.
@@ -108,14 +102,7 @@ export async function synthesizeSpeech(input: {
   }
 
   if (!response.ok) {
-    // Google's own wording ("API key not valid", "has not been used in project …") is
-    // what tells the owner which setup step was missed.
-    const googleError = GoogleErrorResponse.safeParse(body);
-    const detail = googleError.success
-      ? [googleError.data.error.status, googleError.data.error.message]
-          .filter((part) => part !== undefined && part !== "")
-          .join(": ")
-      : "";
+    const detail = googleErrorDetail(body);
     return failed(
       `Text-to-Speech answered HTTP ${response.status}${detail === "" ? "." : ` — ${detail}`}`,
     );

@@ -47,13 +47,24 @@ export type SyncState = {
   invalid: InvalidRow[];
 };
 
+// Google's translation of one term or example sentence, keyed by that exact text.
+export type MachineTranslationEntry = {
+  text: string;
+  translation: string;
+};
+
 // A row of its own rather than a field on `SyncState`: a failed attempt then cannot
 // overwrite the record of the last successful one, and a sync that fails before any has
 // ever succeeded still leaves its reason behind.
+//
+// Machine translations ride in a row here too, rather than in a table of their own: a few
+// hundred short strings do not need an index, and a new table would mean a schema upgrade
+// on the database that holds the review history.
 export type MetaRow =
   | { key: "syncState"; value: SyncState }
   | { key: "lastSyncError"; value: SyncFailure }
-  | { key: "newPerDay"; value: number };
+  | { key: "newPerDay"; value: number }
+  | { key: "machineTranslations"; value: MachineTranslationEntry[] };
 
 export type RecordedReview = {
   seq: number;
@@ -118,6 +129,18 @@ export async function writeNewPerDay(newPerDay: number): Promise<number> {
   await db.meta.put({ key: "newPerDay", value: sanitized });
 
   return sanitized;
+}
+
+export async function readMachineTranslations(): Promise<MachineTranslationEntry[]> {
+  const row = await db.meta.get("machineTranslations");
+  return row?.key === "machineTranslations" ? row.value : [];
+}
+
+// Replaces the whole set: the caller has already dropped the texts no word uses any more.
+export async function writeMachineTranslations(
+  entries: MachineTranslationEntry[],
+): Promise<void> {
+  await db.meta.put({ key: "machineTranslations", value: entries });
 }
 
 export async function recordReview(input: {

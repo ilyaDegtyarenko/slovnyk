@@ -13,6 +13,14 @@ import { Timestamp } from "@/components/timestamp";
 import { useRovingFocus } from "@/components/use-roving-focus";
 import { recordReview, undoLastReview } from "@/lib/db";
 import {
+  loadMachineTranslations,
+  machineTranslationHint,
+  NO_MACHINE_TRANSLATIONS,
+  prefetchMachineTranslations,
+  textsToTranslate,
+  type MachineTranslations,
+} from "@/lib/machine-translation";
+import {
   actionForKey,
   countsLabel,
   loadSession,
@@ -99,6 +107,8 @@ export default function StudyPage() {
   const [syncError, setSyncError] = useState<SyncError | null>(null);
   const [syncErrorSeen, setSyncErrorSeen] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
+  const [machineTranslations, setMachineTranslations] =
+    useState<MachineTranslations>(NO_MACHINE_TRANSLATIONS);
   const pronunciationReady = useSyncExternalStore(
     subscribeToNothing,
     pronunciationAvailable,
@@ -140,6 +150,8 @@ export default function StudyPage() {
   useEffect(() => {
     void (async () => {
       await restart();
+      // Awaited rather than left to race the pass below, whose newer set must land last.
+      setMachineTranslations(await loadMachineTranslations());
 
       // The cached list is on screen by now, so the sheet is only ever a refinement of it.
       const synced = await syncFromApi({ fresh: false });
@@ -150,10 +162,12 @@ export default function StudyPage() {
       }
 
       setSyncError(null);
-      // Every word gets its recording onto the device while the network is here, so the
-      // speaker still plays one in airplane mode.
-      void prefetchPronunciations(
-        synced.words.filter((word) => !word.orphaned).map((word) => word.term),
+      // Every word gets its recording and Google's translation onto the device while the
+      // network is here, so both are still there in airplane mode.
+      const currentWords = synced.words.filter((word) => !word.orphaned);
+      void prefetchPronunciations(currentWords.map((word) => word.term));
+      void prefetchMachineTranslations(textsToTranslate(currentWords)).then(
+        setMachineTranslations,
       );
       // Rebuilding under a session already in progress would shuffle the cards out from
       // under the user; the next queue picks the edits up anyway.
@@ -455,6 +469,16 @@ export default function StudyPage() {
     }
 
     const intervalByRating = previewIntervals(current.card, new Date());
+    const termHint = machineTranslationHint(
+      machineTranslations.get(current.word.term),
+      [current.word.translation, current.word.term],
+    );
+    const exampleHint =
+      current.word.example === ""
+        ? null
+        : machineTranslationHint(machineTranslations.get(current.word.example), [
+            current.word.example,
+          ]);
     return (
       <div className="flex flex-col gap-4">
         {/* The key remounts the card face down for every word, which is also what plays
@@ -509,12 +533,22 @@ export default function StudyPage() {
                   <span className="block text-sm text-zinc-500 dark:text-zinc-400">
                     {current.word.term}
                   </span>
-                  <span className="block max-w-full break-words text-balance text-3xl font-semibold tracking-tight">
-                    {current.word.translation}
+                  <span className="flex w-full flex-col items-center gap-1.5">
+                    <span className="block max-w-full break-words text-balance text-3xl font-semibold tracking-tight">
+                      {current.word.translation}
+                    </span>
+                    {termHint === null ? null : (
+                      <MachineTranslation text={termHint} />
+                    )}
                   </span>
                   {current.word.example === "" ? null : (
-                    <span className="block max-w-[min(28rem,100%)] break-words text-balance text-base italic text-zinc-600 dark:text-zinc-400">
-                      {current.word.example}
+                    <span className="flex w-full flex-col items-center gap-1.5">
+                      <span className="block max-w-[min(28rem,100%)] break-words text-balance text-base italic text-zinc-600 dark:text-zinc-400">
+                        {current.word.example}
+                      </span>
+                      {exampleHint === null ? null : (
+                        <MachineTranslation text={exampleHint} />
+                      )}
                     </span>
                   )}
                   {current.word.tags.length === 0 ? null : (
@@ -776,6 +810,19 @@ export default function StudyPage() {
         </footer>
       )}
     </main>
+  );
+}
+
+// Google's version under the tutor's, smaller and quieter, so it reads as a second opinion
+// rather than as a second answer.
+function MachineTranslation({ text }: { text: string }) {
+  return (
+    <span className="block max-w-[min(28rem,100%)] break-words text-balance text-sm text-zinc-500 dark:text-zinc-400">
+      <span className="mr-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+        Google
+      </span>
+      {text}
+    </span>
   );
 }
 

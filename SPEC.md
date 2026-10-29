@@ -88,7 +88,7 @@ Dexie database `slovnyk`, version 1:
 words:    'id, term, updatedAt'
 progress: 'id, due, state'      // FSRS card state, keyed by word id
 reviews:  '++seq, id, reviewedAt'  // append-only review log
-meta:     'key'                 // syncedAt, settings, schema version
+meta:     'key'                 // syncedAt, settings, schema version, machine translations
 ```
 
 ### 4.2 Scheduling
@@ -140,6 +140,27 @@ Composed in this order:
   - A term without a file on the device (offline before its download, or the key unset)
     falls back to the platform's speech synthesis. The button does not render where
     neither audio nor speech synthesis exists.
+- The back of the card also shows Google's translation (Cloud Translation Basic v2,
+  English to Russian), as a small muted line labelled `Google` under the tutor's
+  `translation`, and another under `example`. It is a second opinion for checking the
+  tutor, never a replacement: the line is left out where it only repeats what the card
+  already shows — the tutor's text, or the English handed back untranslated — once case,
+  `ё`/`е`, punctuation and spacing are set aside.
+  - `/api/translate` (POST, `GOOGLE_TRANSLATE_API_KEY` on the server) takes texts in
+    batches and translates only text present in the sheet as a `term` or `example`; any
+    other text in a request is left out. It keeps each translated text in Next's data
+    cache, keyed by language pair and text, so a text repeated by another device or
+    another request does not reach Google until that entry is evicted or a deploy starts
+    the cache afresh. It answers with whatever came through: a text Google failed beside
+    others is left out, a group of texts that all failed ends the request (a wrong key or
+    a spent quota fails them alike), and no group starts after ten seconds. Only a
+    request in which nothing came through is an error. It sits behind the access key
+    like every other `/api` route.
+  - Each time the study screen syncs, the device asks for the texts it lacks and drops
+    the ones no current word uses, so the line is there offline too. One pass runs at a
+    time and keeps each batch as it arrives. The pass stops at the first failed request
+    (key unset, access locked, offline); the next visit resumes it. Without a
+    translation on the device the card shows the tutor's alone.
 - After reveal: four rating buttons, with keyboard shortcuts `1`–`4`. Each button shows
   the interval that answer would schedule (`10 min`, `3 d`), computed by ts-fsrs, so the
   four choices explain themselves. The buttons enter as a chain — each a beat after the
@@ -215,6 +236,9 @@ Composed in this order:
 - Pronunciation files live in their own Cache Storage cache (`slovnyk-pronunciations`),
   filled by the page, keyed by voice and term; the service worker leaves
   `/api/pronounce` to the network.
+- Machine translations live in one IndexedDB `meta` row (`machineTranslations`), keyed by
+  the exact text translated; `/api/translate` is a POST, which the service worker does
+  not cache.
 - A study session completed offline must persist and must not be lost on reload.
 
 ## 7. UX rules

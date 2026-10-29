@@ -217,6 +217,44 @@ test.describe("study session", () => {
     await expect(page.getByText("1/3")).toBeVisible();
   });
 
+  test("the back of the card carries Google's translation where it differs from the tutor's", async ({
+    page,
+  }) => {
+    await serveWordsFixture(page);
+    const asked: string[] = [];
+    await page.route("**/api/translate", async (route) => {
+      const { texts } = route.request().postDataJSON() as { texts: string[] };
+      asked.push(...texts);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          translations: texts.map((text) => ({
+            text,
+            // The first card's example comes back untranslated, so only its term earns a line.
+            translation:
+              text === "He blimflars over the washing-up." ? text : `machine: ${text}`,
+          })),
+        }),
+      });
+    });
+    await page.goto("/");
+
+    // New cards come in sheet order, so the first one is blimflar.
+    await expect(
+      page.getByRole("button", { name: "blimflar — show answer" }),
+    ).toBeVisible();
+    await page.locator("body").press("Space");
+
+    await expect(page.getByText("machine: blimflar")).toBeVisible();
+    await expect(page.getByText("Google", { exact: true })).toHaveCount(1);
+
+    // Every term and example is asked for once, and nothing beyond them.
+    expect([...asked].sort()).toEqual(
+      WORDS_FIXTURE.words.flatMap((word) => [word.term, word.example]).sort(),
+    );
+  });
+
   test("a card rated Again rejoins the sitting instead of resetting the bar", async ({
     page,
   }) => {
